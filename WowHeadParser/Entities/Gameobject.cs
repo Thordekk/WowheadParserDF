@@ -231,7 +231,7 @@ namespace WowHeadParser.Entities
             if (IsCheckboxChecked("loot") && m_gameobjectLootDatas != null)
             {
                 m_gameobjectLootBuilder = new SqlBuilder("gameobject_loot_template", "entry", SqlQueryType.DeleteInsert);
-                m_gameobjectLootBuilder.SetFieldsNames("Item", "Reference", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
+                m_gameobjectLootBuilder.SetFieldsNames("Item", "ItemType", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
 
                 returnSql += "UPDATE gameobject_template SET data1 = " + m_data.id + " WHERE entry = " + m_data.id + " AND type IN (3, 50);\n";
                 foreach (GameObjectLootParsing gameobjectLootData in m_gameobjectLootDatas)
@@ -270,7 +270,7 @@ namespace WowHeadParser.Entities
                         
                         m_gameobjectLootBuilder.AppendFieldsValue(m_data.id, // Entry
                                                                     gameobjectLootData.id * idMultiplier, // Item
-                                                                    0, // Reference
+                                                                    0, // ItemType
                                                                     chance, // Chance
                                                                     gameobjectLootData.questRequired, // QuestRequired
                                                                     lootMask, // LootMode
@@ -290,13 +290,13 @@ namespace WowHeadParser.Entities
             if (IsCheckboxChecked("herbalism") && m_gameobjectHerbalismDatas != null)
             {
                 m_gameobjectHerbalismBuilder = new SqlBuilder("gameobject_loot_template", "entry", SqlQueryType.InsertIgnore);
-                m_gameobjectHerbalismBuilder.SetFieldsNames("Item", "Reference", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
+                m_gameobjectHerbalismBuilder.SetFieldsNames("Item", "ItemType", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
 
                 returnSql += "UPDATE gameobject_template SET data1 = " + m_data.id + " WHERE entry = " + m_data.id + " AND type IN (3, 50);\n";
                 foreach (GameObjectLootParsing gameobjectHerbalismData in m_gameobjectHerbalismDatas)
                     m_gameobjectHerbalismBuilder.AppendFieldsValue(m_data.id, // Entry
                                                                    gameobjectHerbalismData.id, // Item
-                                                                   0, // Reference
+                                                                   0, // ItemType
                                                                    gameobjectHerbalismData.percent, // Chance
                                                                    0, // QuestRequired
                                                                    1, // LootMode
@@ -311,13 +311,13 @@ namespace WowHeadParser.Entities
             if (IsCheckboxChecked("mining") && m_gameobjectMiningDatas != null)
             {
                 m_gameobjectMiningBuilder = new SqlBuilder("gameobject_loot_template", "entry", SqlQueryType.InsertIgnore);
-                m_gameobjectMiningBuilder.SetFieldsNames("Item", "Reference", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
+                m_gameobjectMiningBuilder.SetFieldsNames("Item", "ItemType", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
 
                 returnSql += "UPDATE gameobject_template SET data1 = " + m_data.id + " WHERE entry = " + m_data.id + " AND type IN (3, 50);\n";
                 foreach (GameObjectLootParsing gameobjectMiningData in m_gameobjectMiningDatas)
                     m_gameobjectMiningBuilder.AppendFieldsValue(m_data.id, // Entry
                                                                 gameobjectMiningData.id, // Item
-                                                                0, // Reference
+                                                                0, // ItemType
                                                                 gameobjectMiningData.percent, // Chance
                                                                 0, // QuestRequired
                                                                 1, // LootMode

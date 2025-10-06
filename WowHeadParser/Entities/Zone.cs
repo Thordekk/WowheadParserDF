@@ -46,22 +46,6 @@ namespace WowHeadParser.Entities
             return GetWowheadBaseUrl() + "/zone=" + m_zoneTemplateData.id;
         }
 
-        /*public override List<Entity> GetIdsFromZone(String zoneId, String zoneHtml)
-        {
-            String pattern = @"new Listview\({template: 'npc', id: 'npcs', name: LANG\.tab_npcs, tabs: tabsRelated, parent: 'lkljbjkb574', note: \$WH\.sprintf\(LANG\.lvnote_filterresults, '\/npcs\?filter=cr=6;crs=" + zoneId + @";crv=0'\), data: (.+)}\);";
-            String creatureJSon = Tools.ExtractJsonFromWithPattern(zoneHtml, pattern);
-
-            List<CreatureTemplateParsing> parsingArray = JsonConvert.DeserializeObject<List<CreatureTemplateParsing>>(creatureJSon);
-            List<Entity> tempArray = new List<Entity>();
-            foreach (CreatureTemplateParsing creatureTemplateStruct in parsingArray)
-            {
-                Creature creature = new Creature(creatureTemplateStruct.id);
-                tempArray.Add(creature);
-            }
-
-            return tempArray;
-        }*/
-
         public override bool ParseSingleJson(int id = 0)
         {
             if (m_zoneTemplateData.id == 0 && id == 0)
@@ -74,40 +58,50 @@ namespace WowHeadParser.Entities
             if (zoneHtml.Contains("inputbox-error"))
                 return false;
 
-            String dataPattern = @"\$\.extend\(g_npcs\[" + m_creatureTemplateData.id + @"\], (.+)\);";
-            String modelPattern = @"ModelViewer\.show\(\{ type: [0-9]+, typeId: " + m_creatureTemplateData.id + @", displayId: ([0-9]+)";
-            String vendorPattern = @"new Listview\({template: 'item', id: 'sells', name: LANG.tab_sells, tabs: tabsRelated, parent: 'lkljbjkb574', extraCols: \[Listview\.extraCols\.cost(?:, _)*\], note: \$WH\.sprintf\(LANG.lvnote_filterresults, '\/items\?filter=cr=129;crs=0;crv=" + m_creatureTemplateData.id + @"'\), data: (.+)}\);";
+            String dataPattern = @"\$\.extend\(g_zones\[" + m_zoneTemplateData.id + @"\], (.+)\);";
+            String modelPattern = @"ModelViewer\.show\(\{ type: [0-9]+, typeId: " + m_zoneTemplateData.id + @", displayId: ([0-9]+)";
+            String vendorPattern = @"new Listview\({template: 'item', id: 'sells', name: LANG.tab_sells, tabs: tabsRelated, parent: 'lkljbjkb574', extraCols: \[Listview\.extraCols\.cost(?:, _)*\], note: \$WH\.sprintf\(LANG.lvnote_filterresults, '\/items\?filter=cr=129;crs=0;crv=" + m_zoneTemplateData.id + @"'\), data: (.+)}\);";
             String creatureLootPattern = @"new Listview\({template: 'item', id: 'drops', name: LANG\.tab_drops, tabs: tabsRelated, parent: 'lkljbjkb574', extraCols: \[Listview\.extraCols\.count, Listview\.extraCols\.percent(?:, Listview.extraCols.mode)?\],  showLootSpecs: [0-9],sort:\['-percent', 'name'\], _totalCount: [0-9]+, computeDataFunc: Listview\.funcBox\.initLootTable, onAfterCreate: Listview\.funcBox\.addModeIndicator, data: (.+)}\);";
             String creatureSkinningPattern = @"new Listview\(\{template: 'item', id: 'skinning', name: LANG\.tab_skinning, tabs: tabsRelated, parent: 'lkljbjkb574', extraCols: \[Listview\.extraCols\.count, Listview\.extraCols\.percent\], sort:\['-percent', 'name'\], computeDataFunc: Listview\.funcBox\.initLootTable, note: \$WH\.sprintf\(LANG\.lvnote_npcskinning, [0-9]+\), _totalCount: ([0-9]+), data: (.+)}\);";
+            String fishingPattern = @"new Listview\({template: 'item', id: 'fishing', name: LANG\.tab_fishing, tabs: tabsRelated, parent: 'lkljbjkb574', extraCols: \[Listview\.extraCols\.count, Listview\.extraCols\.percent\], sort:\['-percent', 'name'\], computeDataFunc: Listview\.funcBox\.initLootTable, _totalCount: ([0-9]+), data: (.+)}\);";
 
-            String creatureTemplateDataJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, dataPattern);
+            String creatureTemplateDataJSon = Tools.ExtractJsonFromWithPattern(zoneHtml, dataPattern);
             CreatureTemplateParsing creatureTemplateData = JsonConvert.DeserializeObject<CreatureTemplateParsing>(creatureTemplateDataJSon);
             SetCreatureTemplateData(creatureTemplateData);
 
-            String npcVendorJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, vendorPattern);
+            String npcVendorJSon = Tools.ExtractJsonFromWithPattern(zoneHtml, vendorPattern);
             if (npcVendorJSon != null)
             {
                 NpcVendorParsing[] npcVendorDatas = JsonConvert.DeserializeObject<NpcVendorParsing[]>(npcVendorJSon);
                 SetNpcVendorData(npcVendorDatas);
             }
 
-            String creatureLootJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureLootPattern);
+            String creatureLootJSon = Tools.ExtractJsonFromWithPattern(zoneHtml, creatureLootPattern);
             if (creatureLootJSon != null)
             {
                 CreatureLootParsing[] creatureLootDatas = JsonConvert.DeserializeObject<CreatureLootParsing[]>(creatureLootJSon);
                 SetCreatureLootData(creatureLootDatas);
             }
 
-            String creatureSkinningCount = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureSkinningPattern, 1);
-            String creatureSkinningJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureSkinningPattern, 2);
+            String creatureSkinningCount = Tools.ExtractJsonFromWithPattern(zoneHtml, creatureSkinningPattern, 1);
+            String creatureSkinningJSon = Tools.ExtractJsonFromWithPattern(zoneHtml, creatureSkinningPattern, 2);
             if (creatureSkinningJSon != null)
             {
-                CreatureLootParsing[] creatureLootDatas = JsonConvert.DeserializeObject<CreatureLootParsing[]>(creatureSkinningJSon);
-                SetCreatureSkinningData(creatureLootDatas, Int32.Parse(creatureSkinningCount));
+                CreatureLootParsing[] creatureSkinningDatas = JsonConvert.DeserializeObject<CreatureLootParsing[]>(creatureSkinningJSon);
+                SetCreatureSkinningData(creatureSkinningDatas, Int32.Parse(creatureSkinningCount));
             }
 
-            String modelId = Tools.ExtractJsonFromWithPattern(creatureHtml, modelPattern);
-            m_modelid = modelId != null ? Int32.Parse(modelId): 0;
+            String modelId = Tools.ExtractJsonFromWithPattern(zoneHtml, modelPattern);
+            m_modelid = modelId != null ? Int32.Parse(modelId) : 0;
+
+            String fishingCount = Tools.ExtractJsonFromWithPattern(zoneHtml, fishingPattern, 1);
+            String fishingJSon = Tools.ExtractJsonFromWithPattern(zoneHtml, fishingPattern, 2);
+            if (fishingJSon != null)
+            {
+                FishingLootParsing[] fishingLootDatas = JsonConvert.DeserializeObject<FishingLootParsing[]>(fishingJSon);
+                SetFishingLootData(fishingLootDatas, Int32.Parse(fishingCount));
+            }
+
             return true;
         }
 
@@ -140,11 +134,11 @@ namespace WowHeadParser.Entities
                     int cost = Convert.ToInt32(npcVendorDatas[i].cost[0]);
                     npcVendorDatas[i].integerCost = cost;
 
-                    List<Int32> itemId          = new List<Int32>();
-                    List<Int32> itemCount       = new List<Int32>();
+                    List<Int32> itemId = new List<Int32>();
+                    List<Int32> itemCount = new List<Int32>();
 
-                    List<Int32> currencyId      = new List<Int32>();
-                    List<Int32> currencyCount   = new List<Int32>();
+                    List<Int32> currencyId = new List<Int32>();
+                    List<Int32> currencyCount = new List<Int32>();
 
                     foreach (JArray itemCost in npcVendorDatas[i].cost[2])
                     {
@@ -201,6 +195,18 @@ namespace WowHeadParser.Entities
             }
 
             m_creatureSkinningDatas = creatureSkinningDatas;
+        }
+
+        public void SetFishingLootData(FishingLootParsing[] fishingLootDatas, int totalCount)
+        {
+            for (uint i = 0; i < fishingLootDatas.Length; ++i)
+            {
+                float percent = (float)fishingLootDatas[i].count * 100 / (float)totalCount;
+                percent = Tools.NormalizeFloat(percent);
+                fishingLootDatas[i].percent = percent.ToString().Replace(",", ".");
+            }
+
+            m_fishingLootDatas = fishingLootDatas;
         }
 
         private int GetFactionFromReact()
@@ -295,6 +301,17 @@ namespace WowHeadParser.Entities
                 returnSql += m_creatureSkinningBuilder.ToString() + "\n";
             }
 
+            if (IsCheckboxChecked("fishing") && m_fishingLootDatas != null)
+            {
+                m_fishingLootBuilder = new SqlBuilder("fishing_loot_template", "entry", SqlQueryType.InsertIgnore);
+                m_fishingLootBuilder.SetFieldsNames("item", "ChanceOrQuestChance", "lootmode", "groupid", "mincountOrRef", "maxcount", "itemBonuses");
+
+                foreach (FishingLootParsing fishingLootData in m_fishingLootDatas)
+                    m_fishingLootBuilder.AppendFieldsValue(m_zoneTemplateData.id, fishingLootData.id, fishingLootData.percent, 1, 0, fishingLootData.stack[0], fishingLootData.stack[1], "");
+
+                returnSql += m_fishingLootBuilder.ToString() + "\n";
+            }
+
             return returnSql;
         }
 
@@ -307,11 +324,13 @@ namespace WowHeadParser.Entities
         protected NpcVendorParsing[] m_npcVendorDatas;
         protected CreatureLootParsing[] m_creatureLootDatas;
         protected CreatureLootParsing[] m_creatureSkinningDatas;
+        protected FishingLootParsing[] m_fishingLootDatas;
 
         protected SqlBuilder m_creatureTemplateBuilder;
         protected SqlBuilder m_creatureLocalesBuilder;
         protected SqlBuilder m_npcVendorBuilder;
         protected SqlBuilder m_creatureLootBuilder;
         protected SqlBuilder m_creatureSkinningBuilder;
+        protected SqlBuilder m_fishingLootBuilder;
     }
 }

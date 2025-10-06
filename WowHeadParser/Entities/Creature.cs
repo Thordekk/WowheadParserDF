@@ -631,7 +631,7 @@ namespace WowHeadParser.Entities
 
                 int templateEntry = m_creatureTemplateData.id;
                 m_creatureLootBuilder = new SqlBuilder("creature_loot_template", "entry", SqlQueryType.DeleteInsert);
-                m_creatureLootBuilder.SetFieldsNames("Item", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
+                m_creatureLootBuilder.SetFieldsNames("Item", "ItemType", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
 
                 m_creatureReferenceLootBuilder = new SqlBuilder("reference_loot_template", "entry", SqlQueryType.DeleteInsert);
                 m_creatureReferenceLootBuilder.SetFieldsNames("Item", "Reference", "Chance", "QuestRequired", "LootMode", "GroupId", "MinCount", "MaxCount", "Comment");
@@ -688,6 +688,7 @@ namespace WowHeadParser.Entities
 
                             m_creatureLootBuilder.AppendFieldsValue(entry, // Entry
                                                                     creatureLootData.id * idMultiplier, // Item
+                                                                    0, //"ItemType",
                                                                     chance, // Chance
                                                                     creatureLootData.questRequired, // QuestRequired
                                                                     lootMask, // LootMode

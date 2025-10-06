@@ -275,7 +275,7 @@ namespace WowHeadParser.Entities
                 {
                     case "9.2.0.42560":
                         {
-                            m_itemDroppedByBuilder.SetFieldsNames("Item", "Reference", "Chance", "LootMode", "GroupId", "MinCount", "MaxCount", "comment");
+                            m_itemDroppedByBuilder.SetFieldsNames("ItemType", "Item", "Reference", "Chance", "LootMode", "GroupId", "MinCount", "MaxCount", "comment");
                         }
                         break;
                     default: // 8.x and 7.x

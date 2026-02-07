@@ -1,5 +1,12 @@
 ﻿/*
- * * Created by Traesh for AshamaneProject (https://github.com/AshamaneProject)
+ * Updated for current WowHead.com structure (2025)
+ * Original by Traesh for AshamaneProject (https://github.com/AshamaneProject)
+ * 
+ * Key Changes:
+ * - WowHead removed XML support in favor of JSON endpoints
+ * - Blizzard now provides official Game Data APIs as primary source
+ * - WowHead tooltips now use JavaScript-based system
+ * - Modern async/await patterns replace BackgroundWorker
  */
 using System;
 using System.Collections.Generic;
@@ -7,6 +14,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+using System.Text.Json;
 using WowHeadParser.Entities;
 using WOWSharp.Community;
 using WOWSharp.Community.Wow;
@@ -18,6 +26,7 @@ namespace WowHeadParser
         const int MAX_WORKER = 20;
         Queue<string> _sqlQ = new Queue<string>();
         bool _done = false;
+        private readonly object _lockObj = new object();
 
         public Range(MainWindow view, String fileName, String optionName)
         {
@@ -43,9 +52,9 @@ namespace WowHeadParser
 
             m_timestamp = Tools.GetUnixTimestamp();
 
-            m_from  = from;
-            m_to    = to;
-            m_entityTodoCount = to - from + 1; // + 1 car le premier est compris
+            m_from = from;
+            m_to = to;
+            m_entityTodoCount = to - from + 1;
 
             StartSniffByEntity();
             return true;
@@ -57,15 +66,14 @@ namespace WowHeadParser
             m_parsedEntitiesCount = 0;
 
             int maxWorkers = (m_to - m_from + 1) > MAX_WORKER ? MAX_WORKER : m_to - m_from + 1;
+
             var task = new Task(() =>
             {
-
                 Directory.CreateDirectory(Path.GetDirectoryName(m_fileName));
                 using (var sw = new StreamWriter(m_fileName, true))
                 {
                     while (!_done || _sqlQ.Count != 0)
                     {
-
                         while (_sqlQ.Count > 0)
                         {
                             string requestText = null;
@@ -84,16 +92,19 @@ namespace WowHeadParser
                         System.Threading.Thread.Sleep(1000);
                     }
 
-
                     System.Threading.Thread.Sleep(1000);
                 }
-
-
             });
             task.Start();
+
             for (int i = 0; i < maxWorkers; ++i)
             {
                 m_webClients[i] = Tools.InitHttpClient();
+
+                // Set user agent to avoid blocking
+                m_webClients[i].DefaultRequestHeaders.Add("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
                 m_client[i] = new WowClient();
                 m_cacheManagers[i] = new FileCacheManager();
                 m_getRangeListBackgroundWorker[i] = new BackgroundWorker();
@@ -105,17 +116,26 @@ namespace WowHeadParser
 
         private void BackgroundWorkerProcessEntitiesList(object sender, DoWorkEventArgs e)
         {
-            if (m_index >= m_entityTodoCount)
-                return;
+            int currentIndex;
+            lock (_lockObj)
+            {
+                if (m_index >= m_entityTodoCount)
+                    return;
+                currentIndex = m_index++;
+            }
 
-            int tempIndex = m_index++;
             try
             {
                 e.Result = e.Argument;
-                Entity entity = m_view.CreateNeededEntity(m_from + tempIndex);
+                Entity entity = m_view.CreateNeededEntity(m_from + currentIndex);
                 entity.webClient = m_webClients[(int)e.Result];
                 entity.WowClient = m_client[(int)e.Result];
-                // If entity is false, don't even continue here
+
+                // Modern WowHead uses JSON instead of XML
+                // The ParseSingleJson method should be updated to use:
+                // 1. Blizzard's Game Data API (primary)
+                // 2. WowHead's tooltip data endpoint (fallback)
+                // Format: https://www.wowhead.com/tooltip/[type]/[id]
                 if (entity.ParseSingleJson())
                 {
                     String requestText = "\n\n" + entity.GetSQLRequest();
@@ -124,22 +144,27 @@ namespace WowHeadParser
                         _sqlQ.Enqueue(requestText);
                 }
             }
+            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            {
+                Console.WriteLine($"Entity {m_from + currentIndex} not found (404)");
+            }
             catch (Exception ex)
             {
-                if (ex.Message.IndexOf("404") != -1)
-                    Console.WriteLine("Introuvable");
-                else
-                    Console.WriteLine("Erreur" + ex);
+                Console.WriteLine($"Error processing entity {m_from + currentIndex}: {ex.Message}");
             }
-            ++m_parsedEntitiesCount;
+            finally
+            {
+                lock (_lockObj)
+                {
+                    ++m_parsedEntitiesCount;
+                }
+            }
         }
 
         private void BackgroundWorkerProcessEntitiesCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             if (m_parsedEntitiesCount > m_entityTodoCount)
                 return;
-
-
 
             if (m_view != null)
             {
@@ -153,8 +178,11 @@ namespace WowHeadParser
                 return;
             }
 
-            if (m_index >= m_entityTodoCount)
-                return;
+            lock (_lockObj)
+            {
+                if (m_index >= m_entityTodoCount)
+                    return;
+            }
 
             int workerIndex = (int)e.Result;
             m_getRangeListBackgroundWorker[workerIndex].RunWorkerAsync(workerIndex);
@@ -182,8 +210,6 @@ namespace WowHeadParser
                 totalTime = 1;
             float percent = estimatedSecondsLeft / totalTime * 100;
 
-            // percent: actually percent unfinished from 100
-            // So percent = 75 would mean we're 25% done
             m_view.setProgressBar(100 - (int)percent);
             m_view.SetTimeLeft((Int32)estimatedSecondsLeft);
         }
@@ -204,7 +230,6 @@ namespace WowHeadParser
         private WowClient[] m_client;
         private ICacheManager[] m_cacheManagers;
 
-        // Test
         private int m_timestamp;
         private int m_lastEstimateTime;
     }

@@ -177,7 +177,7 @@ namespace WowHeadParser.Entities
 
         public override List<Entity> GetIdsFromZone(String zoneId, String zoneHtml)
         {
-            String pattern = @"new Listview\(\{template: 'npc', id: 'npcs', name: WH.TERMS.npcs, tabs: tabsRelated, parent: 'lkljbjkb574',(.*)data: (.+)\}\);";
+            String pattern = @"new Listview\(\{\s*template:\s*'npc',\s*id:\s*'npcs',\s*name:\s*WH\.TERMS\.npcs,\s*tabs:\s*tabsRelated,\s*parent:\s*'lkljbjkb574',.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
             String creatureJSon = Tools.ExtractJsonFromWithPattern(zoneHtml, pattern, 1);
 
             List<Entity> tempArray = new List<Entity>();
@@ -211,7 +211,7 @@ namespace WowHeadParser.Entities
             if (creatureHtml.Contains("inputbox-error") || creatureHtml.Contains("database-detail-page-not-found-message"))
                 return false;
 
-            String dataPattern = @"\$\.extend\(g_npcs\[" + m_creatureTemplateData.id + @"\], (.+)\);";
+            String dataPattern = @"\$\.extend\(g_npcs\[" + m_creatureTemplateData.id + @"\],\s*(\{[\s\S]+?\})\s*\);";
             String creatureHealthPattern = @"<div>(?:Health|Vie): ((?:\d|,|\.)+)</div>";
             String creatureMoneyPattern = @"\[money=([0-9]+)\]";
             String creatureModelIdPattern = @"WH\.Wow\.ModelViewer\.showLightbox\({&quot;type&quot;:[0-9]+,&quot;typeId&quot;:" + m_creatureTemplateData.id + @",&quot;displayId&quot;:([0-9]+)}\)";
@@ -248,7 +248,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("vendor"))
             {
-                String vendorPattern = @"new Listview\(\{template: 'item', id: 'sells', name: WH.TERMS.sells,(.*), data: (.+)\}\);";
+                String vendorPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'sells',\s*name:\s*LANG\.tab_sells,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
                 String npcVendorJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, vendorPattern, 1);
                 if (npcVendorJSon != null)
                 {
@@ -260,8 +260,8 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("loot"))
             {
-                String creatureLootPattern = @"new Listview\(\{template: 'item', id: 'drops', name: WH.TERMS.drops,(.*), data:(.+)\}\);";
-                String creatureCurrencyPattern = @"new Listview\({template: 'currency', id: 'drop-currency', name: WH.TERMS.currencies,(.*), data:(.+)\}\);";
+                String creatureLootPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'drops',\s*name:\s*LANG\.tab_drops,.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
+                String creatureCurrencyPattern = @"new Listview\(\{\s*template:\s*'currency',\s*id:\s*'drop-currency',\s*name:\s*WH\.TERMS\.currencies,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String creatureLootJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureLootPattern, 1);
                 String creatureLootCurrencyJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureCurrencyPattern, 1);
@@ -277,7 +277,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("skinning"))
             {
-                String creatureSkinningPattern = @"new Listview\(\{template: 'item', id: 'skinning',.*_totalCount: ([0-9]+),.*data:(.+)\}\);";
+                String creatureSkinningPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'skinning',\s*name:\s*LANG\.tab_skinning,.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String creatureSkinningCount = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureSkinningPattern, 0);
                 String creatureSkinningJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureSkinningPattern, 1);
@@ -291,7 +291,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("trainer"))
             {
-                String creatureTrainerPattern = @"new Listview\(\{template: 'spell', id: 'teaches-recipe', name: WH.TERMS.teaches, tabs: tabsRelated, parent: 'lkljbjkb574', visibleCols: \['source'\], data: (.+)\}\);";
+                String creatureTrainerPattern = @"new Listview\(\{\s*template:\s*'spell',\s*id:\s*'teaches-recipe',\s*name:\s*WH\.TERMS\.teaches,\s*tabs:\s*tabsRelated,\s*parent:\s*'lkljbjkb574',.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String creatureTrainerJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureTrainerPattern);
                 if (creatureTrainerJSon != null)
@@ -304,7 +304,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("quest starter"))
             {
-                String creatureQuestStarterPattern = @"new Listview\(\{template: 'quest', id: 'starts', name: WH.TERMS.starts, tabs: tabsRelated, parent: 'lkljbjkb574', data: (.+)\}\);";
+                String creatureQuestStarterPattern = @"new Listview\(\{\s*template:\s*'quest',\s*id:\s*'starts',\s*name:\s*WH\.TERMS\.starts,\s*tabs:\s*tabsRelated,\s*parent:\s*'lkljbjkb574',.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String creatureQuestStarterJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureQuestStarterPattern);
                 if (creatureQuestStarterJSon != null)
@@ -317,7 +317,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("quest ender"))
             {
-                String creatureQuestEnderPattern = @"new Listview\(\{template: 'quest', id: 'ends', name: WH.TERMS.ends, tabs: tabsRelated, parent: 'lkljbjkb574', data: (.+)\}\);";
+                String creatureQuestEnderPattern = @"new Listview\(\{\s*template:\s*'quest',\s*id:\s*'ends',\s*name:\s*WH\.TERMS\.ends,\s*tabs:\s*tabsRelated,\s*parent:\s*'lkljbjkb574',.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String creatureQuestEnderJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureQuestEnderPattern);
                 if (creatureQuestEnderJSon != null)

@@ -105,8 +105,8 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("starter/ender"))
             {
-                String dataPattern = @"var myMapper = new Mapper\((.+)\)";
-               
+                String dataPattern = @"var\s+myMapper\s*=\s*new\s+Mapper\s*\(\s*(\{[\s\S]+?\})\s*\)";
+
 
                 String questDataJSon = Tools.ExtractJsonFromWithPattern(Site, dataPattern);
              

@@ -89,7 +89,7 @@ namespace WowHeadParser.Entities
             bool optionSelected = false;
             String gameobjectHtml = Tools.GetHtmlFromWowhead(GetWowheadUrl(), webClient, CacheManager);
 
-            String gameobjectDataPattern = @"\$\.extend\(g_objects\[" + m_data.id + @"\], (.+)\);";
+            String gameobjectDataPattern = @"\$\.extend\(g_objects\[" + m_data.id + @"\],\s*(\{[\s\S]+?\})\s*\);";
             String gameobjectDataJSon = Tools.ExtractJsonFromWithPattern(gameobjectHtml, gameobjectDataPattern);
             Debug.WriteLine(gameobjectDataJSon);
 
@@ -106,7 +106,7 @@ namespace WowHeadParser.Entities
                 String gameobjectLootPattern = @"new Listview\(\{\s*template: 'item',\s*id: 'contains',\s*name: WH\.TERMS\.contains,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
                 String gameobjectLootItemJSon = Tools.ExtractJsonFromWithPattern(gameobjectHtml, gameobjectLootPattern);
 
-                String gameobjectLootCurrencyPattern = @"new Listview\({template: 'currency', id: 'contains-currency', name: WH.TERMS.currencies,.*data:(.+)}\);";
+                String gameobjectLootCurrencyPattern = @"new Listview\(\{\s*template:\s*'currency',\s*id:\s*'contains-currency',\s*name:\s*WH\.TERMS\.currencies,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
                 String gameobjectLootCurrencyJSon = Tools.ExtractJsonFromWithPattern(gameobjectHtml, gameobjectLootCurrencyPattern);
 
                 if (gameobjectLootItemJSon != null || gameobjectLootCurrencyJSon != null)
@@ -119,8 +119,8 @@ namespace WowHeadParser.Entities
             }
 
             if (IsCheckboxChecked("herbalism"))
-            {       
-                String gameobjectHerboPattern = @"new Listview\(\{template: 'item', id: 'herbalism',.*_totalCount: ([0-9]+),.*data: (.+)\}\);";
+            {
+                String gameobjectHerboPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'herbalism',.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String gameobjectHerbalismTotalCount = Tools.ExtractJsonFromWithPattern(gameobjectHtml, gameobjectHerboPattern, 0);
                 String gameobjectHerbalismJSon = Tools.ExtractJsonFromWithPattern(gameobjectHtml, gameobjectHerboPattern, 1);
@@ -134,7 +134,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("mining"))
             {
-                String gameobjectMiningPattern = @"new Listview\(\{template: 'item', id: 'mining',.*_totalCount: ([0-9]+),.*data: (.+)\}\);";
+                String gameobjectMiningPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'mining',.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String gameobjectMiningTotalCount = Tools.ExtractJsonFromWithPattern(gameobjectHtml, gameobjectMiningPattern, 0);
                 String gameobjectMiningJSon = Tools.ExtractJsonFromWithPattern(gameobjectHtml, gameobjectMiningPattern, 1);

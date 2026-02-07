@@ -76,7 +76,7 @@ namespace WowHeadParser.Entities
             bool optionSelected = false;
             String itemHtml = Tools.GetHtmlFromWowhead(GetWowheadUrl(), webClient, CacheManager);
 
-            String dataPattern = @"\$\.extend\(g_items\[" + m_data.id + @"\], (.+)\);";
+            String dataPattern = @"\$\.extend\(g_items\[" + m_data.id + @"\],\s*(\{[\s\S]+?\})\s*\);";
             String itemDataJSon = Tools.ExtractJsonFromWithPattern(itemHtml, dataPattern);
 
 
@@ -93,7 +93,7 @@ namespace WowHeadParser.Entities
             if (IsCheckboxChecked("create item"))
             {
 
-                String itemSpellPattern = @"new Listview\(\{\n* *template: 'spell',\n* *id: 'created-by-spell',\n* *name: WH.TERMS.createdby,\n* *tabs: 'tabsRelated',\n* *parent: 'lkljbjkb574',\n* *extraCols: \['popularity'\],\n* *sort: \['popularity'\],.*(?:\n)?.*data: (.+),\n\}\);";
+                String itemSpellPattern = @"new Listview\(\{\s*template:\s*'spell',\s*id:\s*'created-by-spell',\s*name:\s*WH\.TERMS\.createdby,\s*tabs:\s*'tabsRelated',\s*parent:\s*'lkljbjkb574',.*?data:\s*(\[[\s\S]+?\]),?\s*\}\);";
                 String itemSpellJSon = Tools.ExtractJsonFromWithPattern(itemHtml, itemSpellPattern);
 
 
@@ -103,7 +103,7 @@ namespace WowHeadParser.Entities
                     optionSelected = true;
                 }
 
-                String itemCreatePattern = @"new Listview\(\{\n* *template: 'item',\n* *id: 'see-also',\n* *name: WH.TERMS.seealso_stc,\n* *tabs: 'tabsRelated',\n* *parent: 'lkljbjkb574',.*(?:\n)?.*data: (.+),\n\}\);";
+                String itemCreatePattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'see-also',\s*name:\s*WH\.TERMS\.seealso_stc,\s*tabs:\s*'tabsRelated',\s*parent:\s*'lkljbjkb574',.*?data:\s*(\[[\s\S]+?\]),?\s*\}\);";
                 String itemCreateJSon = Tools.ExtractJsonFromWithPattern(itemHtml, itemCreatePattern);
 
 
@@ -117,7 +117,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("loot"))
             {
-                String itemLootTemplatePattern = @"new Listview\(\{\n* *template: 'item',\n* *id: 'contained-in-item',\n* *name: WH.TERMS.containedin,\n* *tabs: 'tabsRelated',\n* *parent: 'lkljbjkb574',\n* *extraCols: \['count', 'percent', 'popularity'\],\n* *sort: \['-percent', 'name'\],\n* *computeDataFunc: Listview\.funcBox\.initLootTable,\n* *onAfterCreate: Listview\.funcBox\.addModesAndSeasonsPhases,\n* *hasMultipleSeasonsPhases: false,\n* *seasonPhaseData: \{.*?\},\n* *data: (.+),\n\}\);";
+                String itemLootTemplatePattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'contained-in-item',\s*name:\s*WH\.TERMS\.containedin,.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\]),?\s*\}\);";
 
                 String lootMaxCountStr = Tools.ExtractJsonFromWithPattern(itemHtml, itemLootTemplatePattern, 0);
 
@@ -143,7 +143,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("dropped by"))
             {
-                String itemDroppedByPattern = @"new Listview\(\{\n* *template: 'npc',\n* *id: 'dropped-by',\n* *name: WH.TERMS.droppedby,\n* *tabs: 'tabsRelated',\n* *parent: 'lkljbjkb574',\n* *hiddenCols: \['type'\],\n* *extraCols: \[Listview\.extraCols\.count, Listview\.extraCols\.percent, Listview\.extraCols\.popularity\],\n* *sort: \['-percent', '-count', 'name'\],\n* *computeDataFunc: Listview\.funcBox\.initLootTable,\n* *onAfterCreate: Listview\.funcBox\.addModesAndSeasonsPhases,\n* *hasMultipleSeasonsPhases: false,\n* *seasonPhaseData: \{.*?\},\n* *data: (.+),\n\}\);";
+                String itemDroppedByPattern = @"new Listview\(\{\s*template:\s*'npc',\s*id:\s*'dropped-by',\s*name:\s*WH\.TERMS\.droppedby,.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\]),?\s*\}\);";
 
                 String itemDroppedByJson = Tools.ExtractJsonFromWithPattern(itemHtml, itemDroppedByPattern);
 

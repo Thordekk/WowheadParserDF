@@ -52,7 +52,7 @@ namespace WowHeadParser.Entities
             if (string.IsNullOrEmpty(zoneHTML) || zoneHTML.Contains("It may have been removed from the game."))
                 return false;
 
-            String fishingPattern = @"new Listview\(\{\s*template: 'item',\s*id: 'drops',\s*name: [^,]*,\s*tabs: [^,]*,\s*parent: '[^']*',\s*extraCols: \[[^\]]*\],\s*computeDataFunc: [^,]*,\s*onAfterCreate: [^,]*,\s*data:\s*(\[[\s\S]+?\])\s*\}\);";
+            String fishingPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'fishing',\s*name:\s*LANG\.tab_fishing,.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
             String fishingJSon = Tools.ExtractJsonFromWithPattern(zoneHTML, fishingPattern);
             Debug.WriteLine(fishingJSon);

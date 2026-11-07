@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Created by Traesh (http://www.farahlon.com)
  */
 using Newtonsoft.Json;
@@ -53,7 +53,7 @@ namespace WowHeadParser.Entities
             else if (m_zoneTemplateData.id == 0 && id != 0)
                 m_zoneTemplateData.id = id;
 
-            String zoneHtml = Tools.GetHtmlFromWowhead(GetWowheadUrl());
+            String zoneHtml = Tools.GetHtmlFromWowhead(GetWowheadUrl(), webClient, CacheManager);
 
             if (zoneHtml.Contains("inputbox-error"))
                 return false;

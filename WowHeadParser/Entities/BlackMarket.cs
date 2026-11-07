@@ -1,4 +1,4 @@
-﻿/*
+/*
  * * Created by Traesh for AshamaneProject (https://github.com/AshamaneProject)
  */
 using Newtonsoft.Json;
@@ -31,7 +31,7 @@ namespace WowHeadParser.Entities
 
         public override List<Entity> GetIdsFromZone(String zoneId, String zoneHtml)
         {
-            String blackMarketHtml = Tools.GetHtmlFromWowhead("http://www.wowhead.com/items?filter=cr=181;crs=1;crv=0#700-2", webClient, CacheManager);
+            String blackMarketHtml = Tools.GetHtmlFromWowhead("https://www.wowhead.com/items?filter=cr=181;crs=1;crv=0#700-2", webClient, CacheManager);
 
             String blackMarketItemsPattern = @"var listviewitems = (\[.+\]);";
             String allBlackMarketItemJson = Tools.ExtractJsonFromWithPattern(blackMarketHtml, blackMarketItemsPattern);

@@ -1,92 +1,90 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.IO;
-using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-using Google.Protobuf.WellKnownTypes;
-using MySql.Data.MySqlClient;
-using MySqlX.XDevAPI.Common;
 using Newtonsoft.Json;
 
 namespace WOWSharp.Community
 {
+    /// <summary>
+    /// Small disk cache for Wowhead/API responses. Cache names are hashes of the
+    /// complete URL (not just the final path component), preventing locale/query
+    /// collisions and Windows-invalid filenames.
+    /// </summary>
     public class FileCacheManager : ICacheManager
     {
-        
-#if DEBUG
-        public static string CacheDirectory = "C:\\WoWTools\\Wowheadparser\\cache\\";
-#else
-        public static string CacheDirectory = ".\\cache\\";
-#endif
-        
+        public static string CacheDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WowheadParser", "cache");
+        private static readonly object FileLock = new object();
+
         public async Task AddDataAsync(string key, object value)
         {
-            await Task.Run(() =>
-                {
-                key = GetCacheFilePath(key);
+            if (key == null)
+                throw new ArgumentNullException("key");
 
-                if (File.Exists(key))
-                    File.Delete(key);
-
-                if (value is string strVal)
-                {
-                    File.WriteAllText(key, strVal);
-                }
-                else
-                {
-                    File.WriteAllText(key, JsonConvert.SerializeObject(value));
-                }
-            });
-        }
-
-        public async Task<object> LookupDataAsync(string key, System.Type objectType)
-        {
-            key = GetCacheFilePath(key);
-            string val = null;
-            
+            string path = GetCacheFilePath(key);
+            string contents = value is string ? (string)value : JsonConvert.SerializeObject(value);
             await Task.Run(() =>
             {
-                if (File.Exists(key))
+                string temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
                 {
-                    val = File.ReadAllText(key);
+                    File.WriteAllText(temporaryPath, contents, Encoding.UTF8);
+                    lock (FileLock)
+                    {
+                        if (File.Exists(path))
+                            File.Delete(path);
+                        File.Move(temporaryPath, path);
+                    }
                 }
-            });
+                finally
+                {
+                    if (File.Exists(temporaryPath))
+                        File.Delete(temporaryPath);
+                }
+            }).ConfigureAwait(false);
+        }
 
-            if (val == null)
+        public async Task<object> LookupDataAsync(string key, Type objectType)
+        {
+            if (key == null)
+                throw new ArgumentNullException("key");
+            if (objectType == null)
+                throw new ArgumentNullException("objectType");
+
+            string path = GetCacheFilePath(key);
+            string contents = null;
+            await Task.Run(() =>
+            {
+                lock (FileLock)
+                {
+                    if (File.Exists(path))
+                        contents = File.ReadAllText(path, Encoding.UTF8);
+                }
+            }).ConfigureAwait(false);
+
+            if (contents == null)
                 return null;
-
             if (objectType == typeof(string))
-                return val as string;
-
-            // Execute the command and get the value
-            return JsonConvert.DeserializeObject(val.ToString(), objectType);
+                return contents;
+            return JsonConvert.DeserializeObject(contents, objectType);
         }
 
         private string GetCacheFilePath(string key)
         {
-            var urlDest = key.LastIndexOf("/", StringComparison.Ordinal);
+            if (string.IsNullOrWhiteSpace(CacheDirectory))
+                throw new InvalidOperationException("CacheDirectory must be configured.");
+            Directory.CreateDirectory(CacheDirectory);
 
-            if (urlDest == -1)
-                urlDest = key.LastIndexOf("\\", StringComparison.Ordinal);
-            
-            if (urlDest != -1)
-                key = key.Substring(urlDest + 1);
+            byte[] keyBytes = Encoding.UTF8.GetBytes(key);
+            byte[] hash;
+            using (SHA256 sha = SHA256.Create())
+                hash = sha.ComputeHash(keyBytes);
 
-            if (!Directory.Exists(CacheDirectory))
-                Directory.CreateDirectory(CacheDirectory);
-
-            return Path.Combine(CacheDirectory, MakeFileNameSafe(key));
-        }
-
-        private string MakeFileNameSafe(string fileName)
-        {
-            foreach (var c in Path.GetInvalidFileNameChars())
-            {
-                fileName = fileName.Replace(c, '-');
-            }
-
-            return fileName;
+            var fileName = new StringBuilder(hash.Length * 2);
+            foreach (byte item in hash)
+                fileName.Append(item.ToString("x2"));
+            return Path.Combine(CacheDirectory, fileName + ".cache");
         }
     }
 }

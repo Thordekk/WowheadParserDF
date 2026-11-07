@@ -1,14 +1,14 @@
-﻿/*
+/*
  * Created by Traesh for AshamaneProject (https://github.com/AshamaneProject)
  */
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using CsvHelper;
 using CsvHelper.Configuration;
@@ -248,111 +248,136 @@ namespace WowHeadParser
 
     class Tools
     {
-        public static HttpClient InitHttpClient()
-        {
-            ServicePointManager.ServerCertificateValidationCallback += ValidateRemoteCertificate;
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+        private static readonly ConcurrentDictionary<string, string> CapturedResponses = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        public static bool CaptureResponses { get; set; }
 
-            HttpClient httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36");
-            return httpClient;
+        public static bool TryTakeCapturedResponse(string url, out string response)
+        {
+            return CapturedResponses.TryRemove(url, out response);
         }
 
-        private static bool ValidateRemoteCertificate(object sender, X509Certificate cert, X509Chain chain, SslPolicyErrors error)
+        public static void DiscardCapturedResponse(string url)
         {
-            // If the certificate is a valid, signed certificate, return true.
-            if (error == System.Net.Security.SslPolicyErrors.None)
-            {
-                return true;
-            }
+            string ignored;
+            if (url != null)
+                CapturedResponses.TryRemove(url, out ignored);
+        }
 
-            Console.WriteLine("X509Certificate [{0}] Policy Error: '{1}'",
-                cert.Subject,
-                error.ToString());
-            
-            return false;
+        private static void CaptureResponse(string url, string response)
+        {
+            if (CaptureResponses && response != null)
+                CapturedResponses[url] = response;
+        }
+
+        public static HttpClient InitHttpClient()
+        {
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            HttpClient httpClient = new HttpClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(30);
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("WowheadParserDF/1.0 (+https://github.com/Thordekk/WowheadParserDF)");
+            httpClient.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8");
+            return httpClient;
         }
 
         public static String GetHtmlFromWowhead(String url, HttpClient webClient, ICacheManager cacheManager)
         {
+            if (string.IsNullOrWhiteSpace(url))
+                throw new ArgumentException("A Wowhead URL is required.", "url");
+
             if (webClient == null)
                 webClient = InitHttpClient();
-
             if (cacheManager == null)
                 cacheManager = new FileCacheManager();
 
-            int retry = 0;
-
-
-            while (retry < 3)
+            try
             {
-                try
+                var cached = cacheManager.LookupDataAsync(url, typeof(string)).GetAwaiter().GetResult();
+                if (cached != null)
                 {
-
-                    var lookup = cacheManager.LookupDataAsync(url, typeof(string));
-                    lookup.Wait();
-                    var data = lookup.Result;
-
-                    if (data != null)
-                        return data.ToString();
-
-                    break;
+                    string cachedText = cached.ToString();
+                    CaptureResponse(url, cachedText);
+                    return cachedText;
                 }
-                catch (Exception ex)
-                {
-                    Console.Write(ex);
-                }
-
-                retry++;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("Wowhead cache read failed; fetching from site: " + ex.Message);
             }
 
-            retry = 0;
-            while (retry < 3)
+            for (int attempt = 1; attempt <= 3; ++attempt)
             {
                 try
                 {
-                    using (HttpResponseMessage response = webClient.GetAsync(url).Result)
+                    using (HttpResponseMessage response = webClient.GetAsync(url).GetAwaiter().GetResult())
                     {
-                        if (response.IsSuccessStatusCode)
-                            using (HttpContent content = response.Content)
-                            {
-                                var result = content.ReadAsStringAsync();
-                                result.Wait();
-
-                                try
-                                {
-                                    cacheManager.AddDataAsync(url, result.Result).Wait();
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.Write(ex);
-                                }
-
-                                return result.Result;
-                            }
-                        else if (response.StatusCode == HttpStatusCode.NotFound)
+                        if (response.StatusCode == HttpStatusCode.NotFound)
                         {
-                            cacheManager.AddDataAsync(url, "").Wait();
+                            // Do not persist negative responses: records can appear after a site update.
+                            return string.Empty;
                         }
+
+                        bool transient = response.StatusCode == HttpStatusCode.RequestTimeout ||
+                            (int)response.StatusCode == 429 || (int)response.StatusCode >= 500;
+                        if (transient)
+                        {
+                            if (attempt < 3)
+                            {
+                                int delay = 500 * attempt;
+                                if (response.Headers.RetryAfter != null && response.Headers.RetryAfter.Delta.HasValue)
+                                    delay = (int)Math.Min(10000, Math.Max(delay, response.Headers.RetryAfter.Delta.Value.TotalMilliseconds));
+                                System.Threading.Thread.Sleep(delay);
+                                continue;
+                            }
+                            Console.Error.WriteLine("Wowhead returned HTTP " + (int)response.StatusCode + " for " + url);
+                            return string.Empty;
+                        }
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            Console.Error.WriteLine("Wowhead returned HTTP " + (int)response.StatusCode + " for " + url);
+                            return string.Empty;
+                        }
+
+                        string body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                        try { cacheManager.AddDataAsync(url, body).GetAwaiter().GetResult(); }
+                        catch (Exception cacheError) { Console.Error.WriteLine("Wowhead cache write failed: " + cacheError.Message); }
+                        CaptureResponse(url, body);
+                        return body;
                     }
                 }
+                catch (TaskCanceledException ex)
+                {
+                    if (attempt == 3)
+                    {
+                        Console.Error.WriteLine("Wowhead request timed out for " + url + ": " + ex.Message);
+                        return string.Empty;
+                    }
+                    System.Threading.Thread.Sleep(500 * attempt);
+                }
+                catch (HttpRequestException ex)
+                {
+                    if (attempt == 3)
+                    {
+                        Console.Error.WriteLine("Wowhead request failed for " + url + ": " + ex.Message);
+                        return string.Empty;
+                    }
+                    System.Threading.Thread.Sleep(500 * attempt);
+                }
                 catch (Exception ex)
                 {
-                    Console.Write(ex);
+                    Console.Error.WriteLine("Wowhead request failed for " + url + ": " + ex.Message);
+                    return string.Empty;
                 }
-
-                retry++;
             }
-
-            return "";
+            return string.Empty;
         }
 
         public static String GetWowheadUrl(String type, String id)
         {
-            if (type != "")
-                return "http://www.wowhead.com/" + type + "=" + id;
-            else
-                return "http://www.wowhead.com/" + id;
+            string baseUrl = Entities.Entity.GetWowheadBaseUrl();
+            if (!string.IsNullOrEmpty(type))
+                return baseUrl + "/" + type + "=" + id;
+            return baseUrl + "/" + id;
         }
 
         public static String GetFileNameForCurrentTime(String optionName)

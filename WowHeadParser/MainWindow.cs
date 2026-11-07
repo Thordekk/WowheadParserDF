@@ -1,4 +1,4 @@
-﻿/*
+/*
  * * Created by Traesh for AshamaneProject (https://github.com/AshamaneProject)
  */
 using System;
@@ -26,9 +26,26 @@ namespace WowHeadParser
             itIT = 10,
         };
 
+        private System.Windows.Forms.CheckBox stagingModeCheckBox;
+
+        public bool StagingMode
+        {
+            get { return stagingModeCheckBox != null && stagingModeCheckBox.Checked; }
+        }
+
         public MainWindow()
         {
             InitializeComponent();
+            stagingModeCheckBox = new System.Windows.Forms.CheckBox();
+            stagingModeCheckBox.AutoSize = true;
+            stagingModeCheckBox.Checked = true;
+            stagingModeCheckBox.Location = new System.Drawing.Point(12, 275);
+            stagingModeCheckBox.Name = "stagingModeCheckBox";
+            stagingModeCheckBox.Size = new System.Drawing.Size(157, 17);
+            stagingModeCheckBox.Text = "Safe staging SQL (raw page)";
+            stagingModeCheckBox.UseVisualStyleBackColor = true;
+            this.ClientSize = new System.Drawing.Size(465, 302);
+            this.Controls.Add(stagingModeCheckBox);
 
             comboBoxChoice.Items.Add("Single");
             comboBoxChoice.Items.Add("Range");
@@ -68,17 +85,64 @@ namespace WowHeadParser
             for (int i = 0; i < comboBoxLocale.Items.Count; ++i)
                 if (Properties.Settings.Default.wowheadLocale == (String)comboBoxLocale.Items[i])
                     comboBoxLocale.SelectedIndex = i;
+            if (comboBoxLocale.SelectedIndex < 0)
+                comboBoxLocale.SelectedIndex = 0;
+
+            int entityIndex = Properties.Settings.Default.selectedEntity;
+            comboBoxEntity.SelectedIndex = entityIndex > 0 && entityIndex < comboBoxEntity.Items.Count ? entityIndex : 1;
+
+            int versionIndex = comboBoxVersion.Items.IndexOf(Properties.Settings.Default.version);
+            comboBoxVersion.SelectedIndex = versionIndex >= 0 ? versionIndex : 0;
         }
 
         private void parseBtn_Click(object sender, EventArgs e)
         {
+            if (comboBoxEntity.SelectedIndex < 0 || comboBoxChoice.SelectedIndex < 0 ||
+                comboBoxLocale.SelectedIndex < 0 || comboBoxVersion.SelectedIndex < 0)
+            {
+                MessageBox.Show("Select an entity, input mode, locale, and game-data version first.", "Missing selection");
+                return;
+            }
+
+            ids = new List<String>();
+            string[] tokens = textBoxFrom.Text.Split(new char[] { ' ', '\t', '\r', '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string token in tokens)
+            {
+                int parsedId;
+                if (!Int32.TryParse(token, out parsedId) || parsedId <= 0)
+                {
+                    MessageBox.Show("IDs must be positive whole numbers. Invalid value: " + token, "Invalid ID");
+                    return;
+                }
+                ids.Add(parsedId.ToString());
+            }
+
+            if (comboBoxChoice.SelectedIndex != 1 && ids.Count == 0)
+            {
+                MessageBox.Show("Enter at least one ID.", "Missing ID");
+                return;
+            }
+
+            if (comboBoxChoice.SelectedIndex == 1)
+            {
+                int first, last;
+                if (!Int32.TryParse(textBoxFrom.Text.Trim(), out first) ||
+                    !Int32.TryParse(textBoxTo.Text.Trim(), out last) || first <= 0 || last < first)
+                {
+                    MessageBox.Show("Enter a positive start ID and an end ID greater than or equal to it.", "Invalid range");
+                    return;
+                }
+            }
+
+            currentId = 0;
             String selectedLocale = comboBoxLocale.Items[comboBoxLocale.SelectedIndex].ToString();
             String selectedVersion = comboBoxVersion.Items[comboBoxVersion.SelectedIndex].ToString();
             Properties.Settings.Default.wowheadLocale = selectedLocale;
             Properties.Settings.Default.selectedEntity = comboBoxEntity.SelectedIndex;
             Properties.Settings.Default.version = selectedVersion;
+            Tools.CaptureResponses = StagingMode;
             Entity.ReloadWowheadBaseUrl();
-            UpdateCheckboxSettings(); // Must be done before Properties.Settings.Default.Save
+            UpdateCheckboxSettings();
 
             switch (selectedLocale)
             {
@@ -89,67 +153,66 @@ namespace WowHeadParser
                 case "it": Properties.Settings.Default.localIndex = (int)LocaleConstant.itIT; break;
                 case "pt": Properties.Settings.Default.localIndex = (int)LocaleConstant.ptPT; break;
                 case "ru": Properties.Settings.Default.localIndex = (int)LocaleConstant.ruRU; break;
-                default: Properties.Settings.Default.localIndex = (int)LocaleConstant.frFR; break;
+                default: Properties.Settings.Default.localIndex = (int)LocaleConstant.enUS; break;
             }
-
             Properties.Settings.Default.Save();
 
-            ids = new List<String>(textBoxFrom.Text.Split(' '));
-            m_optionName = "_" + comboBoxEntity.Items[comboBoxEntity.SelectedIndex].ToString();
+            m_optionName = "_" + comboBoxEntity.Items[comboBoxEntity.SelectedIndex].ToString() + (StagingMode ? "_Staging" : "");
             m_fileName = Tools.GetFileNameForCurrentTime(m_optionName);
             if (StartParsing())
                 SetStartButtonEnableState(false);
             else
                 SetStartButtonEnableState(true);
-         
         }
 
         public bool StartParsing()
         {
-            Boolean success = false;
             setProgressBar(0);
             if (comboBoxEntity.SelectedIndex == 0)
             {
-                System.Windows.Forms.MessageBox.Show("Not implemented.", "Error!");
-                return success;
+                MessageBox.Show("Black Market export is not implemented.", "Not supported");
+                return false;
             }
 
             switch (comboBoxChoice.SelectedIndex)
             {
                 case 0:
                 {
-                    int firstId = Int32.Parse(ids[currentId]);
-
-                    Range range = new Range(this, m_fileName, m_optionName);
-                    success = range.StartParsing(firstId, firstId);
-
-                    break;
+                    int firstId;
+                    if (currentId >= ids.Count || !Int32.TryParse(ids[currentId], out firstId))
+                    {
+                        MessageBox.Show("The selected ID is invalid.", "Invalid ID");
+                        return false;
+                    }
+                    Range single = new Range(this, m_fileName, m_optionName);
+                    return single.StartParsing(firstId, firstId);
                 }
                 case 1:
                 {
-                    int firstId = Int32.Parse(textBoxFrom.Text);
-                    int lastId = Int32.Parse(textBoxTo.Text);
-
+                    int firstId, lastId;
+                    if (!Int32.TryParse(textBoxFrom.Text.Trim(), out firstId) ||
+                        !Int32.TryParse(textBoxTo.Text.Trim(), out lastId))
+                        return false;
                     Range range = new Range(this, m_fileName, m_optionName);
-                    success = range.StartParsing(firstId, lastId);
-
-                    break;
-                    }
+                    return range.StartParsing(firstId, lastId);
+                }
                 case 2:
                 {
+                    if (currentId >= ids.Count)
+                        return false;
                     Zone zone = new Zone(this, m_optionName);
-                    success = zone.StartParsing(ids[currentId]);
-
-                    break;
+                    return zone.StartParsing(ids[currentId]);
                 }
+                default:
+                    return false;
             }
-
-            return success;
         }
 
         public void SetStartButtonEnableState(bool state)
         {
             parseBtn.Enabled = state;
+            if (stagingModeCheckBox != null)
+                stagingModeCheckBox.Enabled = state;
         }
 
         public void setProgressBar(int progress)

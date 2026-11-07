@@ -1,236 +1,275 @@
-﻿/*
- * Updated for current WowHead.com structure (2025)
- * Original by Traesh for AshamaneProject (https://github.com/AshamaneProject)
- * 
- * Key Changes:
- * - WowHead removed XML support in favor of JSON endpoints
- * - Blizzard now provides official Game Data APIs as primary source
- * - WowHead tooltips now use JavaScript-based system
- * - Modern async/await patterns replace BackgroundWorker
- */
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Text.Json;
-using WowHeadParser.Entities;
 using WOWSharp.Community;
 using WOWSharp.Community.Wow;
+using WowHeadParser.Entities;
 
 namespace WowHeadParser
 {
     class Range
     {
-        const int MAX_WORKER = 20;
-        Queue<string> _sqlQ = new Queue<string>();
-        bool _done = false;
-        private readonly object _lockObj = new object();
+        // Keep concurrent requests modest: Wowhead is a public site, not a bulk API.
+        private const int MaxWorkers = 4;
+        private readonly object _stateLock = new object();
+        private readonly object _queueLock = new object();
+        private readonly System.Collections.Generic.Queue<string> _sqlQueue = new System.Collections.Generic.Queue<string>();
+        private volatile bool _done;
+        private bool _completionStarted;
+        private Task _writerTask;
 
-        public Range(MainWindow view, String fileName, String optionName)
+        private readonly MainWindow _view;
+        private readonly string _fileName;
+        private readonly string _optionName;
+        private readonly bool _stagingMode;
+        private int _from;
+        private int _to;
+        private int _todoCount;
+        private int _nextIndex;
+        private int _processedCount;
+        private BackgroundWorker[] _workers;
+        private HttpClient[] _httpClients;
+        private WowClient[] _wowClients;
+        private ICacheManager[] _cacheManagers;
+        private int _timestamp;
+        private int _lastEstimateTime;
+
+        public Range(MainWindow view, string fileName, string optionName)
         {
-            m_view = view;
-            m_index = 0;
-            m_parsedEntitiesCount = 0;
-            m_getRangeListBackgroundWorker = new BackgroundWorker[MAX_WORKER];
-            m_webClients = new HttpClient[MAX_WORKER];
-            m_client = new WowClient[MAX_WORKER];
-            m_cacheManagers = new ICacheManager[MAX_WORKER];
-            m_fileName = fileName;
-            m_optionName = optionName;
-            m_lastEstimateTime = 0;
+            _view = view;
+            _fileName = fileName;
+            _optionName = optionName;
+            _stagingMode = view != null && view.StagingMode;
         }
 
         public bool StartParsing(int from, int to)
         {
-            if (from > to)
+            if (from < 1 || to < from)
             {
-                System.Windows.Forms.MessageBox.Show("End ID of Range should be higher than start.", "Error!");
+                System.Windows.Forms.MessageBox.Show("Enter a positive ID range with End ID >= Start ID.", "Invalid range");
                 return false;
             }
 
-            m_timestamp = Tools.GetUnixTimestamp();
+            long count = (long)to - from + 1;
+            if (count > 1000000)
+            {
+                System.Windows.Forms.MessageBox.Show("The requested range exceeds the one-million-ID safety limit. Split it into smaller ranges.", "Range too large");
+                return false;
+            }
 
-            m_from = from;
-            m_to = to;
-            m_entityTodoCount = to - from + 1;
-
-            StartSniffByEntity();
+            _from = from;
+            _to = to;
+            _todoCount = (int)count;
+            _nextIndex = 0;
+            _processedCount = 0;
+            _done = false;
+            _completionStarted = false;
+            _timestamp = Tools.GetUnixTimestamp();
+            _lastEstimateTime = 0;
+            StartWorkers();
             return true;
         }
 
-        void StartSniffByEntity()
+        private void StartWorkers()
         {
-            m_index = 0;
-            m_parsedEntitiesCount = 0;
+            int count = Math.Min(MaxWorkers, _todoCount);
+            _workers = new BackgroundWorker[count];
+            _httpClients = new HttpClient[count];
+            _wowClients = new WowClient[count];
+            _cacheManagers = new ICacheManager[count];
 
-            int maxWorkers = (m_to - m_from + 1) > MAX_WORKER ? MAX_WORKER : m_to - m_from + 1;
+            string directory = Path.GetDirectoryName(_fileName);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+            bool writeStagingSchema = _stagingMode &&
+                (!File.Exists(_fileName) || new FileInfo(_fileName).Length == 0);
 
-            var task = new Task(() =>
+            _writerTask = Task.Run(() =>
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(m_fileName));
-                using (var sw = new StreamWriter(m_fileName, true))
+                using (var writer = new StreamWriter(_fileName, true, new UTF8Encoding(false)))
                 {
-                    while (!_done || _sqlQ.Count != 0)
+                    if (writeStagingSchema)
+                        writer.Write(Entity.StagingSchemaSql);
+                    while (true)
                     {
-                        while (_sqlQ.Count > 0)
+                        string sql = null;
+                        lock (_queueLock)
                         {
-                            string requestText = null;
-
-                            lock (_sqlQ)
-                            {
-                                if (_sqlQ.Count > 0)
-                                    requestText = _sqlQ.Dequeue();
-                            }
-
-                            if (!string.IsNullOrEmpty(requestText))
-                                sw.Write(requestText);
+                            if (_sqlQueue.Count > 0)
+                                sql = _sqlQueue.Dequeue();
+                            else if (_done)
+                                break;
                         }
 
-                        sw.Flush();
-                        System.Threading.Thread.Sleep(1000);
+                        if (sql != null)
+                            writer.Write(sql);
+                        else
+                            Thread.Sleep(100);
                     }
-
-                    System.Threading.Thread.Sleep(1000);
+                    writer.Flush();
                 }
             });
-            task.Start();
 
-            for (int i = 0; i < maxWorkers; ++i)
+            for (int i = 0; i < count; ++i)
             {
-                m_webClients[i] = Tools.InitHttpClient();
-
-                // Set user agent to avoid blocking
-                m_webClients[i].DefaultRequestHeaders.Add("User-Agent",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-
-                m_client[i] = new WowClient();
-                m_cacheManagers[i] = new FileCacheManager();
-                m_getRangeListBackgroundWorker[i] = new BackgroundWorker();
-                m_getRangeListBackgroundWorker[i].DoWork += new DoWorkEventHandler(BackgroundWorkerProcessEntitiesList);
-                m_getRangeListBackgroundWorker[i].RunWorkerCompleted += new RunWorkerCompletedEventHandler(BackgroundWorkerProcessEntitiesCompleted);
-                m_getRangeListBackgroundWorker[i].RunWorkerAsync(i);
+                _httpClients[i] = Tools.InitHttpClient();
+                _wowClients[i] = new WowClient();
+                _cacheManagers[i] = new FileCacheManager();
+                _workers[i] = new BackgroundWorker();
+                _workers[i].DoWork += BackgroundWorkerProcessEntity;
+                _workers[i].RunWorkerCompleted += BackgroundWorkerProcessEntityCompleted;
+                _workers[i].RunWorkerAsync(i);
             }
         }
 
-        private void BackgroundWorkerProcessEntitiesList(object sender, DoWorkEventArgs e)
+        private void BackgroundWorkerProcessEntity(object sender, DoWorkEventArgs e)
         {
-            int currentIndex;
-            lock (_lockObj)
+            int workerIndex = (int)e.Argument;
+            e.Result = workerIndex;
+            int index;
+            lock (_stateLock)
             {
-                if (m_index >= m_entityTodoCount)
+                if (_nextIndex >= _todoCount)
                     return;
-                currentIndex = m_index++;
+                index = _nextIndex++;
             }
 
+            int entityId = _from + index;
+            Entity entity = null;
             try
             {
-                e.Result = e.Argument;
-                Entity entity = m_view.CreateNeededEntity(m_from + currentIndex);
-                entity.webClient = m_webClients[(int)e.Result];
-                entity.WowClient = m_client[(int)e.Result];
+                entity = _view.CreateNeededEntity(entityId);
+                entity.webClient = _httpClients[workerIndex];
+                entity.WowClient = _wowClients[workerIndex];
+                entity.CacheManager = _cacheManagers[workerIndex];
 
-                // Modern WowHead uses JSON instead of XML
-                // The ParseSingleJson method should be updated to use:
-                // 1. Blizzard's Game Data API (primary)
-                // 2. WowHead's tooltip data endpoint (fallback)
-                // Format: https://www.wowhead.com/tooltip/[type]/[id]
-                if (entity.ParseSingleJson())
+                bool parsed = entity.ParseSingleJson();
+                bool stagingMode = _stagingMode;
+                if (parsed || stagingMode)
                 {
-                    String requestText = "\n\n" + entity.GetSQLRequest();
-
-                    lock (_sqlQ)
-                        _sqlQ.Enqueue(requestText);
+                    string legacySql = string.Empty;
+                    if (parsed && stagingMode)
+                    {
+                        try { legacySql = entity.GetSQLRequest(); }
+                        catch (Exception sqlError) { Console.Error.WriteLine("Legacy SQL mapping failed for " + entityId + ": " + sqlError.Message); }
+                    }
+                    else if (parsed)
+                        legacySql = entity.GetSQLRequest();
+                    string sql = stagingMode
+                        ? entity.GetStagingSQL(legacySql)
+                        : legacySql;
+                    if (!string.IsNullOrWhiteSpace(sql))
+                    {
+                        lock (_queueLock)
+                            _sqlQueue.Enqueue("\n" + sql + "\n");
+                    }
+                    else if (_stagingMode)
+                    {
+                        Console.Error.WriteLine("No captured Wowhead page was available for entity " + entityId + "; skipped staging row.");
+                    }
                 }
-            }
-            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
-            {
-                Console.WriteLine($"Entity {m_from + currentIndex} not found (404)");
+                else
+                {
+                    Tools.DiscardCapturedResponse(entity.GetWowheadUrl());
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error processing entity {m_from + currentIndex}: {ex.Message}");
+                if (entity != null && _stagingMode)
+                {
+                    string staged = entity.GetStagingSQL(string.Empty);
+                    if (!string.IsNullOrWhiteSpace(staged))
+                    {
+                        lock (_queueLock)
+                            _sqlQueue.Enqueue("\n" + staged + "\n");
+                    }
+                }
+                else if (entity != null)
+                    Tools.DiscardCapturedResponse(entity.GetWowheadUrl());
+                Console.Error.WriteLine("Error processing entity " + entityId + ": " + ex);
             }
             finally
             {
-                lock (_lockObj)
-                {
-                    ++m_parsedEntitiesCount;
-                }
+                lock (_stateLock)
+                    ++_processedCount;
             }
         }
 
-        private void BackgroundWorkerProcessEntitiesCompleted(object sender, RunWorkerCompletedEventArgs e)
+        private void BackgroundWorkerProcessEntityCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
-            if (m_parsedEntitiesCount > m_entityTodoCount)
+            if (e.Error != null)
+                Console.Error.WriteLine("Worker error: " + e.Error);
+
+            int workerIndex = e.Result == null ? -1 : (int)e.Result;
+            if (workerIndex < 0)
                 return;
 
-            if (m_view != null)
+            int processed;
+            int nextIndex;
+            bool completeNow;
+            lock (_stateLock)
             {
-                EstimateSecondsTimeLeft();
-            }
-
-            if (m_parsedEntitiesCount == m_entityTodoCount)
-            {
-                _done = true;
-                m_view.SetWorkDone();
-                return;
-            }
-
-            lock (_lockObj)
-            {
-                if (m_index >= m_entityTodoCount)
+                processed = _processedCount;
+                nextIndex = _nextIndex;
+                completeNow = processed >= _todoCount && !_completionStarted;
+                if (completeNow)
+                    _completionStarted = true;
+                if (_completionStarted && !completeNow)
                     return;
             }
 
-            int workerIndex = (int)e.Result;
-            m_getRangeListBackgroundWorker[workerIndex].RunWorkerAsync(workerIndex);
-        }
+            EstimateSecondsTimeLeft(processed);
 
-        private void EstimateSecondsTimeLeft()
-        {
-            Int32 unixTimestamp = Tools.GetUnixTimestamp();
-
-            if ((m_lastEstimateTime + 1) >= unixTimestamp)
+            if (completeNow)
+            {
+                _done = true;
+                try
+                {
+                    if (_writerTask != null)
+                        _writerTask.Wait();
+                }
+                catch (AggregateException ex)
+                {
+                    System.Windows.Forms.MessageBox.Show("Could not finish writing the SQL file: " + ex.GetBaseException().Message, "Export error");
+                }
+                DisposeHttpClients();
+                if (_view != null)
+                    _view.SetWorkDone();
                 return;
+            }
 
-            m_lastEstimateTime = unixTimestamp;
-
-            float elapsedSeconds = unixTimestamp - m_timestamp;
-
-            float entityCount = m_to - m_from;
-            float timeByEntity = (float)elapsedSeconds / (float)m_parsedEntitiesCount;
-
-            float estimatedSecondsLeft = timeByEntity * (entityCount - m_parsedEntitiesCount);
-            if (estimatedSecondsLeft < 0)
-                estimatedSecondsLeft = 0;
-            float totalTime = timeByEntity * entityCount;
-            if (totalTime < 1)
-                totalTime = 1;
-            float percent = estimatedSecondsLeft / totalTime * 100;
-
-            m_view.setProgressBar(100 - (int)percent);
-            m_view.SetTimeLeft((Int32)estimatedSecondsLeft);
+            if (nextIndex < _todoCount && !_workers[workerIndex].IsBusy)
+                _workers[workerIndex].RunWorkerAsync(workerIndex);
         }
 
-        private MainWindow m_view;
+        private void EstimateSecondsTimeLeft(int processed)
+        {
+            int now = Tools.GetUnixTimestamp();
+            if (now <= _lastEstimateTime || processed <= 0)
+                return;
+            _lastEstimateTime = now;
 
-        private String m_fileName;
-        private String m_optionName;
+            double elapsed = Math.Max(1, now - _timestamp);
+            double remaining = elapsed / processed * Math.Max(0, _todoCount - processed);
+            int progress = (int)Math.Min(100, (long)processed * 100 / _todoCount);
+            if (_view != null)
+            {
+                _view.setProgressBar(progress);
+                _view.SetTimeLeft((int)Math.Min(int.MaxValue, remaining));
+            }
+        }
 
-        private int m_from;
-        private int m_to;
-        private int m_entityTodoCount;
-        private int m_index;
-        private int m_parsedEntitiesCount;
-
-        private BackgroundWorker[] m_getRangeListBackgroundWorker;
-        private HttpClient[] m_webClients;
-        private WowClient[] m_client;
-        private ICacheManager[] m_cacheManagers;
-
-        private int m_timestamp;
-        private int m_lastEstimateTime;
+        private void DisposeHttpClients()
+        {
+            if (_httpClients == null)
+                return;
+            foreach (HttpClient client in _httpClients)
+                if (client != null)
+                    client.Dispose();
+        }
     }
 }

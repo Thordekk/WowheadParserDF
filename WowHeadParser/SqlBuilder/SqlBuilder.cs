@@ -1,5 +1,7 @@
-﻿/*
- * * Created by Traesh for AshamaneProject (https://github.com/AshamaneProject)
+/*
+ * SQL builder used by the WowheadParser entity exporters.
+ * Text values are emitted as UTF-8 hex literals so quotes, backslashes, and
+ * SQL modes such as NO_BACKSLASH_ESCAPES cannot corrupt generated imports.
  */
 using System;
 using System.Collections.Generic;
@@ -22,152 +24,89 @@ namespace Sql
 
     public class SqlBuilder
     {
-        /// <summary>
-        /// Gets a sql query type
-        /// </summary>
         public SqlQueryType QueryType { get; private set; }
-
-        /// <summary>
-        /// Gets a value indicating whether to allow null values
-        /// </summary>
         public bool AllowNullValue { get; private set; }
-
-        /// <summary>
-        /// Gets a value indication whether to allow append header to insert and replace query
-        /// </summary>
         public bool WriteWithoutHeader { get; private set; }
 
-        private string _tableName = string.Empty;
-
-        private string _keyName = string.Empty;
-
-        private List<string> _fields = new List<string>(64);
-
+        private readonly string _tableName;
+        private readonly string _keyName;
+        private readonly List<string> _fields = new List<string>(64);
         public List<SqlItem> _items = new List<SqlItem>(64);
+        private readonly StringBuilder _content = new StringBuilder(8196);
 
-        private StringBuilder _content = new StringBuilder(8196);
-
-        /// <summary>
-        /// Initial Sql builder
-        /// </summary>
-        /// <param name="tableName">Table name (like creature_template, creature etc.)</param>
-        /// <param name="keyName">Key name (like entry, id, guid etc.)</param>
         public SqlBuilder(string tableName, string keyName, SqlQueryType type = SqlQueryType.InsertOrUpdate)
         {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("A table name is required.", "tableName");
+            if (string.IsNullOrWhiteSpace(keyName))
+                throw new ArgumentException("A key column is required.", "keyName");
+
             _tableName = tableName;
             _keyName = keyName;
-
-            WriteWithoutHeader = false;// Settings.Default.WithoutHeader;
-            AllowNullValue = true;// Settings.Default.AllowEmptyValues;
-            QueryType = type;// (SqlQueryType)Settings.Default.QueryType;
+            WriteWithoutHeader = false;
+            AllowNullValue = true;
+            QueryType = type;
 
             if (QueryType <= SqlQueryType.None || QueryType >= SqlQueryType.Max)
                 throw new InvalidQueryTypeException(QueryType);
         }
 
-        /// <summary>
-        /// Initial Sql builder
-        /// <param name="tableName">Table name (like creature_template, creature etc.)</param>
-        /// </summary>
-        public SqlBuilder(string tableName)
-                : this(tableName, "entry")
-        {
-        }
+        public SqlBuilder(string tableName) : this(tableName, "entry") { }
 
-        /// <summary>
-        /// Append fields names
-        /// </summary>
-        /// <param name="args">fields name array</param>
         public void SetFieldsNames(params string[] args)
         {
             if (args == null)
-                throw new ArgumentNullException();
-
-            for (int i = 0; i < args.Length; ++i)
+                throw new ArgumentNullException("args");
+            foreach (string field in args)
             {
-                _fields.Add(args[i]);
+                if (string.IsNullOrWhiteSpace(field))
+                    throw new ArgumentException("Field names cannot be empty.", "args");
+                _fields.Add(field);
             }
         }
 
-        /// <summary>
-        /// Append fields names
-        /// </summary>
-        /// <param name="args">fields name array</param>
         public void SetFieldsName(string format, params object[] args)
         {
-            if (args == null || string.IsNullOrEmpty(format))
+            if (string.IsNullOrEmpty(format) || args == null)
                 throw new ArgumentNullException();
-
-            string field = string.Format(format, args);
-            _fields.Add(field);
+            _fields.Add(string.Format(CultureInfo.InvariantCulture, format, args));
         }
 
-        /// <summary>
-        /// Append key and fields value 
-        /// </summary>
-        /// <param name="key">key value</param>
-        /// <param name="args">string fields values array</param>
         public void AppendFieldsValue(object key, params string[] args)
         {
             if (key == null || args == null)
                 throw new ArgumentNullException();
-
-            List<string> values = new List<string>(args.Length);
-            for (int i = 0; i < args.Length; ++i)
-            {
-                values.Add(args[i]);
-            }
-
+            var values = new List<string>(args.Length);
+            foreach (string value in args)
+                values.Add(value ?? string.Empty);
             _items.Add(new SqlItem(key, values));
         }
 
-        /// <summary>
-        /// Append key and fields value 
-        /// </summary>
-        /// <param name="key">key value</param>
-        /// <param name="args">object fields values array</param>
         public void AppendFieldsValue(object key, params object[] args)
         {
             if (key == null || args == null)
                 throw new ArgumentNullException();
-
-            List<string> values = new List<string>(args.Length);
-            for (int i = 0; i < args.Length; ++i)
-            {
-                values.Add(args[i].ToString());
-            }
-
+            var values = new List<string>(args.Length);
+            foreach (object value in args)
+                values.Add(value == null ? string.Empty : Convert.ToString(value, CultureInfo.InvariantCulture));
             _items.Add(new SqlItem(key, values));
         }
 
-        /// <summary>
-        /// Append sql query
-        /// </summary>
-        /// <param name="query"></param>
         public void AppendSqlQuery(string query, params object[] args)
         {
             if (args == null || string.IsNullOrWhiteSpace(query))
                 throw new ArgumentNullException();
-
-            _content.AppendLine(string.Format(query, args));
+            _content.AppendLine(string.Format(CultureInfo.InvariantCulture, query, args));
         }
 
-        public bool Empty
-        {
-            get { return _items.Count <= 0; }
-        }
+        public bool Empty { get { return _items.Count == 0; } }
 
-        /// <summary>
-        /// Build sql query
-        /// </summary>
         public override string ToString()
         {
             if (Empty)
                 return string.Empty;
 
             _content.Clear();
-            _content.Capacity = 2048 * _items.Count;
-
             switch (QueryType)
             {
                 case SqlQueryType.Update:
@@ -186,79 +125,53 @@ namespace Sql
 
         private string BuildUpdateQuery()
         {
-            for (int i = 0; i < _items.Count; ++i)
+            foreach (SqlItem item in _items)
             {
-                bool notEmpty = false;
-
-                SqlItem item = _items[i];
-
-                StringBuilder contentInternal = new StringBuilder(1024);
+                EnsureFieldCount(item);
+                var assignments = new List<string>();
+                for (int i = 0; i < item.Count; ++i)
                 {
-                    contentInternal.AppendFormat("UPDATE `{0}` SET ", _tableName);
-                    for (int j = 0; j < item.Count; ++j)
-                    {
-                        if (!AllowNullValue && string.IsNullOrWhiteSpace(item[j]))
-                            continue;
-
-                        contentInternal.AppendFormat(NumberFormatInfo.InvariantInfo, "`{0}` = '{1}', ", _fields[j], item[j]);
-                        notEmpty = true;
-                    }
-                    contentInternal.Remove(contentInternal.Length - 2, 2);
-                    contentInternal.AppendFormat(" WHERE `{0}` = {1};", _keyName, item.Key).AppendLine();
-
-                    if (notEmpty)
-                        _content.Append(contentInternal.ToString());
+                    string value = item[i];
+                    if (!AllowNullValue && string.IsNullOrWhiteSpace(value))
+                        continue;
+                    assignments.Add(QuoteIdentifier(_fields[i]) + " = " + SqlValue(value));
                 }
+                if (assignments.Count == 0)
+                    continue;
+                _content.Append("UPDATE ").Append(QuoteIdentifier(_tableName))
+                    .Append(" SET ").Append(string.Join(", ", assignments))
+                    .Append(" WHERE ").Append(QuoteIdentifier(_keyName)).Append(" = ")
+                    .Append(SqlValue(item.Key)).AppendLine(";");
             }
-
             return _content.ToString();
         }
 
         private string BuildInsertOrUpdateQuery()
         {
-            for (int i = 0; i < _items.Count; ++i)
+            foreach (SqlItem item in _items)
             {
-                bool notEmpty = false;
+                EnsureFieldCount(item);
+                var columns = new List<string> { QuoteIdentifier(_keyName) };
+                var values = new List<string> { SqlValue(item.Key) };
+                var updates = new List<string>();
 
-                SqlItem item = _items[i];
-
-                StringBuilder tableNames    = new StringBuilder(1024);
-                StringBuilder tableValues   = new StringBuilder(1024);
-                StringBuilder tableUpdates  = new StringBuilder(1024);
-
-                tableNames.AppendFormat("INSERT INTO `{0}` ({1}, ", _tableName, _keyName);
-                tableValues.AppendFormat(") VALUES ({0}, ", item.Key);
-                tableUpdates.AppendFormat(") ON DUPLICATE KEY UPDATE ");  
-                for (int j = 0; j < item.Count; ++j)
+                for (int i = 0; i < item.Count; ++i)
                 {
-                    if (!AllowNullValue && string.IsNullOrWhiteSpace(item[j]))
+                    string value = item[i];
+                    if (!AllowNullValue && string.IsNullOrWhiteSpace(value))
                         continue;
-
-                    tableNames.AppendFormat(NumberFormatInfo.InvariantInfo, "{0}, ", _fields[j]);
-                    var val = item[j];
-
-                    if (!string.IsNullOrEmpty(val) && val.Contains("'"))
-                        val = val.Replace("'", "''");
-                    
-                    tableValues.AppendFormat(NumberFormatInfo.InvariantInfo, "'{0}', ", val);
-                    tableUpdates.AppendFormat(NumberFormatInfo.InvariantInfo, "{0} = VALUES({1}), ", _fields[j], _fields[j]);
-                    notEmpty = true;
+                    string column = QuoteIdentifier(_fields[i]);
+                    columns.Add(column);
+                    values.Add(SqlValue(value));
+                    updates.Add(column + " = VALUES(" + column + ")");
                 }
-
-                if (notEmpty)
-                {
-                    tableNames.Remove(tableNames.Length - 2, 2);
-                    tableValues.Remove(tableValues.Length - 2, 2);
-                    tableUpdates.Remove(tableUpdates.Length - 2, 2);
-
-                    tableNames.Append(tableValues);
-                    tableNames.Append(tableUpdates);
-                    tableNames.Append(";").AppendLine();
-
-                    _content.Append(tableNames.ToString());
-                }
+                if (updates.Count == 0)
+                    continue;
+                _content.Append("INSERT INTO ").Append(QuoteIdentifier(_tableName))
+                    .Append(" (").Append(string.Join(", ", columns)).Append(") VALUES (")
+                    .Append(string.Join(", ", values)).Append(") ON DUPLICATE KEY UPDATE ")
+                    .Append(string.Join(", ", updates)).AppendLine(";");
             }
-
             return _content.ToString();
         }
 
@@ -266,58 +179,100 @@ namespace Sql
         {
             if (QueryType == SqlQueryType.DeleteInsert)
             {
-                List<object> alreadyDoneEntry = new List<object>();
-
+                var deletedKeys = new HashSet<string>(StringComparer.Ordinal);
                 foreach (SqlItem item in _items)
                 {
-                    if (alreadyDoneEntry.Contains(item.Key))
+                    string key = SqlValue(item.Key);
+                    if (!deletedKeys.Add(key))
                         continue;
-
-                    _content.AppendFormat("DELETE FROM `{0}` WHERE `{1}` = '{2}';", _tableName, _keyName, item.Key).AppendLine();
-                    alreadyDoneEntry.Add(item.Key);
+                    _content.Append("DELETE FROM ").Append(QuoteIdentifier(_tableName))
+                        .Append(" WHERE ").Append(QuoteIdentifier(_keyName)).Append(" = ")
+                        .Append(key).AppendLine(";");
                 }
             }
 
-            switch (QueryType)
-            {
-                case SqlQueryType.Insert:
-                case SqlQueryType.DeleteInsert:
-                    _content.AppendFormat("INSERT INTO `{0}`", _tableName);
-                    break;
-                case SqlQueryType.InsertIgnore:
-                    _content.AppendFormat("INSERT IGNORE INTO `{0}`", _tableName);
-                    break;
-                case SqlQueryType.Replace:
-                    _content.AppendFormat("REPLACE INTO `{0}`", _tableName);
-                    break;
-            }
+            string command = QueryType == SqlQueryType.Insert ? "INSERT INTO " :
+                QueryType == SqlQueryType.InsertIgnore ? "INSERT IGNORE INTO " :
+                QueryType == SqlQueryType.Replace ? "REPLACE INTO " : "INSERT INTO ";
+            _content.Append(command).Append(QuoteIdentifier(_tableName));
 
+            var columns = new List<string>();
             if (!WriteWithoutHeader)
             {
-                _content.AppendFormat(" (`{0}`, ", _keyName);
-
-                for (int i = 0; i < _fields.Count; ++i)
-                    _content.AppendFormat("`{0}`, ", _fields[i]);
-
-                _content.Remove(_content.Length - 2, 2);
-                _content.Append(")");
+                columns.Add(QuoteIdentifier(_keyName));
+                foreach (string field in _fields)
+                    columns.Add(QuoteIdentifier(field));
+                _content.Append(" (").Append(string.Join(", ", columns)).Append(")");
             }
+
             _content.AppendLine(" VALUES");
-
-            for (int i = 0; i < _items.Count; ++i)
+            for (int row = 0; row < _items.Count; ++row)
             {
-                SqlItem item = _items[i];
-
-                _content.AppendFormat("('{0}', ", item.Key);
-                for (int j = 0; j < item.Count; ++j)
+                SqlItem item = _items[row];
+                EnsureFieldCount(item);
+                if (!WriteWithoutHeader && item.Count != _fields.Count)
+                    throw new InvalidOperationException("SQL row has " + item.Count + " values but " + _fields.Count + " columns were configured for " + _tableName + ".");
+                var values = new List<string> { SqlValue(item.Key) };
+                for (int i = 0; i < item.Count; ++i)
                 {
-                    _content.AppendFormat(NumberFormatInfo.InvariantInfo, "'{0}', ", item[j]);
+                    string value = item[i];
+                    if (!AllowNullValue && string.IsNullOrWhiteSpace(value))
+                        value = "0";
+                    values.Add(SqlValue(value));
                 }
-                _content.Remove(_content.Length - 2, 2);
-                _content.AppendFormat("){0}", i < _items.Count - 1 ? "," : ";").AppendLine();
+                _content.Append("(").Append(string.Join(", ", values)).Append(")")
+                    .AppendLine(row < _items.Count - 1 ? "," : ";");
             }
+            return _content.ToString();
+        }
 
-            return _content + Environment.NewLine;
+        private void EnsureFieldCount(SqlItem item)
+        {
+            if (item.Count > _fields.Count)
+                throw new InvalidOperationException("SQL row has " + item.Count + " values but only " + _fields.Count + " columns were configured for " + _tableName + ".");
+        }
+
+        private static string QuoteIdentifier(string identifier)
+        {
+            return "`" + identifier.Replace("`", "``") + "`";
+        }
+
+        private static string SqlValue(object value)
+        {
+            if (value == null)
+                return "X''";
+
+            Type valueType = value.GetType();
+            if (valueType.IsPrimitive || value is decimal)
+            {
+                if (value is bool)
+                    return (bool)value ? "1" : "0";
+                return Convert.ToString(value, CultureInfo.InvariantCulture);
+            }
+            return SqlText(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
+        }
+
+        private static string SqlValue(string value)
+        {
+            if (value == null)
+                return "X''";
+            decimal number;
+            if (decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number))
+                return number.ToString(CultureInfo.InvariantCulture);
+            return SqlText(value);
+        }
+
+        private static string SqlText(string value)
+        {
+            return "CONVERT(X'" + ToHex(Encoding.UTF8.GetBytes(value)) + "' USING utf8mb4)";
+        }
+
+        private static string ToHex(byte[] bytes)
+        {
+            var result = new StringBuilder(bytes.Length * 2);
+            foreach (byte value in bytes)
+                result.Append(value.ToString("X2", CultureInfo.InvariantCulture));
+            return result.ToString();
         }
     }
 }

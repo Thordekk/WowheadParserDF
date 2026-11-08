@@ -277,7 +277,7 @@ namespace WowHeadParser.Entities
                                                                     0, // GroupId
                                                                     minLootCount, // MinCount
                                                                     maxLootCount, // MaxCount
-                                                                    gameobjectLootData.name.Replace("'", "\\'")); // Comment
+                                                                    gameobjectLootData.name); // Comment
 
                     }
 

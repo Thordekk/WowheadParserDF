@@ -248,7 +248,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("vendor"))
             {
-                String vendorPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'sells',\s*name:\s*LANG\.tab_sells,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
+                String vendorPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'sells',\s*name:\s*(?:LANG\.tab_sells|WH\.TERMS\.sells),.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
                 String npcVendorJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, vendorPattern, 1);
                 if (npcVendorJSon != null)
                 {
@@ -260,7 +260,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("loot"))
             {
-                String creatureLootPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'drops',\s*name:\s*LANG\.tab_drops,.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
+                String creatureLootPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'drops',\s*name:\s*(?:LANG\.tab_drops|WH\.TERMS\.drops),.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
                 String creatureCurrencyPattern = @"new Listview\(\{\s*template:\s*'currency',\s*id:\s*'drop-currency',\s*name:\s*WH\.TERMS\.currencies,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String creatureLootJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureLootPattern, 1);
@@ -277,7 +277,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("skinning"))
             {
-                String creatureSkinningPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'skinning',\s*name:\s*LANG\.tab_skinning,.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
+                String creatureSkinningPattern = @"new Listview\(\{\s*template:\s*'item',\s*id:\s*'skinning',\s*name:\s*(?:LANG\.tab_skinning|WH\.TERMS\.skinning),.*?_totalCount:\s*([0-9]+),.*?computeDataFunc:\s*Listview\.funcBox\.initLootTable,.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String creatureSkinningCount = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureSkinningPattern, 0);
                 String creatureSkinningJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureSkinningPattern, 1);
@@ -291,7 +291,7 @@ namespace WowHeadParser.Entities
 
             if (IsCheckboxChecked("trainer"))
             {
-                String creatureTrainerPattern = @"new Listview\(\{\s*template:\s*'spell',\s*id:\s*'teaches-recipe',\s*name:\s*WH\.TERMS\.teaches,\s*tabs:\s*tabsRelated,\s*parent:\s*'lkljbjkb574',.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
+                String creatureTrainerPattern = @"new Listview\(\{\s*template:\s*'spell',\s*id:\s*'teaches-recipe',\s*name:\s*(?:WH\.TERMS\.teaches|LANG\.tab_teaches),\s*tabs:\s*tabsRelated,\s*parent:\s*'lkljbjkb574',.*?data:\s*(\[[\s\S]+?\])\s*\}\);";
 
                 String creatureTrainerJSon = Tools.ExtractJsonFromWithPattern(creatureHtml, creatureTrainerPattern);
                 if (creatureTrainerJSon != null)
@@ -695,7 +695,7 @@ namespace WowHeadParser.Entities
                                                                     0, // GroupId
                                                                     minLootCount, // MinCount
                                                                     maxLootCount, // MaxCount
-                                                                    creatureLootData.name?.Replace("'", "\\'")); // Comment
+                                                                    creatureLootData.name); // Comment
                         }
                     }
                     else
@@ -711,7 +711,7 @@ namespace WowHeadParser.Entities
                                                                     0, // GroupId
                                                                     maxReferenceLoot, // MinCount
                                                                     maxReferenceLoot, // MaxCount
-                                                                    creatureLootData.name?.Replace("'", "\\'")); // Comment
+                                                                    creatureLootData.name); // Comment
                             referenceAdded = true;
                         }
 
@@ -729,7 +729,7 @@ namespace WowHeadParser.Entities
                                                                          1, // GroupId
                                                                          minLootCount, // MinCount
                                                                          maxLootCount, // MaxCount
-                                                                         creatureLootData.name?.Replace("'", "\\'")); // Comment
+                                                                         creatureLootData.name); // Comment
                     }
 
                     if (creatureLootData.percent == "0")
@@ -757,7 +757,7 @@ namespace WowHeadParser.Entities
                                                                 0, // GroupId
                                                                 creatureSkinningData.stack[0], // MinCount
                                                                 creatureSkinningData.stack[1], // MaxCount
-                                                                creatureSkinningData.name?.Replace("'", "\\'")); // Comment
+                                                                creatureSkinningData.name); // Comment
                 }
 
                 returnSql += m_creatureSkinningBuilder.ToString() + "\n";

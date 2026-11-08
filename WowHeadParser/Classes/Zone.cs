@@ -110,6 +110,16 @@ namespace WowHeadParser
                 if (requestedEntity.GetType() != typeof(BlackMarket))
                 {
                     _zoneHtml = GetZoneHtmlFromWowhead(_zoneId);
+                    if (string.IsNullOrEmpty(_zoneHtml) || Tools.IsBotChallengePage(_zoneHtml))
+                    {
+                        _writerDone = true;
+                        try { if (_writerTask != null) _writerTask.Wait(); }
+                        catch (AggregateException) { }
+                        System.Windows.Forms.MessageBox.Show(
+                            "Wowhead did not return the zone page (bot check or empty response). No SQL was generated.",
+                            "Zone fetch failed");
+                        return false;
+                    }
                     ParseZoneJson(requestedEntity);
                 }
                 StartSniffByEntity();

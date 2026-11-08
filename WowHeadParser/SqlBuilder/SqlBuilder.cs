@@ -240,7 +240,7 @@ namespace Sql
         private static string SqlValue(object value)
         {
             if (value == null)
-                return "X''";
+                return "''";
 
             Type valueType = value.GetType();
             if (valueType.IsPrimitive || value is decimal)
@@ -255,7 +255,7 @@ namespace Sql
         private static string SqlValue(string value)
         {
             if (value == null)
-                return "X''";
+                return "''";
             decimal number;
             if (decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number))
                 return number.ToString(CultureInfo.InvariantCulture);
@@ -264,15 +264,7 @@ namespace Sql
 
         private static string SqlText(string value)
         {
-            return "CONVERT(X'" + ToHex(Encoding.UTF8.GetBytes(value)) + "' USING utf8mb4)";
-        }
-
-        private static string ToHex(byte[] bytes)
-        {
-            var result = new StringBuilder(bytes.Length * 2);
-            foreach (byte value in bytes)
-                result.Append(value.ToString("X2", CultureInfo.InvariantCulture));
-            return result.ToString();
+            return "'" + value.Replace("'", "''") + "'";
         }
     }
 }

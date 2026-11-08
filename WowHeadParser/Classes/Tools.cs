@@ -251,6 +251,12 @@ namespace WowHeadParser
         private static readonly ConcurrentDictionary<string, string> CapturedResponses = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public static bool CaptureResponses { get; set; }
 
+        // Wowhead rate-limits/bans aggressive crawlers (AWS WAF). Space out real
+        // HTTP requests globally so zone/range runs do not get the IP blocked.
+        private static readonly object RequestThrottleLock = new object();
+        private static DateTime _lastRequestStart = DateTime.MinValue;
+        private const int MinRequestIntervalMs = 350;
+
         public static bool TryTakeCapturedResponse(string url, out string response)
         {
             return CapturedResponses.TryRemove(url, out response);
@@ -295,8 +301,12 @@ namespace WowHeadParser
                 if (cached != null)
                 {
                     string cachedText = cached.ToString();
-                    CaptureResponse(url, cachedText);
-                    return cachedText;
+                    // Never trust a cached bot-challenge or empty page: refetch instead.
+                    if (!string.IsNullOrEmpty(cachedText) && !IsBotChallengePage(cachedText))
+                    {
+                        CaptureResponse(url, cachedText);
+                        return cachedText;
+                    }
                 }
             }
             catch (Exception ex)
@@ -308,6 +318,7 @@ namespace WowHeadParser
             {
                 try
                 {
+                    ThrottleWowheadRequest();
                     using (HttpResponseMessage response = webClient.GetAsync(url).GetAwaiter().GetResult())
                     {
                         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -339,6 +350,24 @@ namespace WowHeadParser
                         }
 
                         string body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+
+                        // Wowhead answers automated clients with an AWS WAF JS
+                        // challenge (HTTP 202) or a CloudFront block page. These
+                        // are not page content: never cache them, otherwise the
+                        // poisoned entry is served forever and every parse comes
+                        // back empty.
+                        if (string.IsNullOrEmpty(body) || IsBotChallengePage(body))
+                        {
+                            // Bot checks are often transient (rate limiting), so retry a few times.
+                            if (attempt < 3)
+                            {
+                                System.Threading.Thread.Sleep(1000 * attempt);
+                                continue;
+                            }
+                            Console.Error.WriteLine("Wowhead served a bot challenge or empty response for " + url);
+                            return string.Empty;
+                        }
+
                         try { cacheManager.AddDataAsync(url, body).GetAwaiter().GetResult(); }
                         catch (Exception cacheError) { Console.Error.WriteLine("Wowhead cache write failed: " + cacheError.Message); }
                         CaptureResponse(url, body);
@@ -370,6 +399,33 @@ namespace WowHeadParser
                 }
             }
             return string.Empty;
+        }
+
+        private static void ThrottleWowheadRequest()
+        {
+            lock (RequestThrottleLock)
+            {
+                double elapsed = (DateTime.UtcNow - _lastRequestStart).TotalMilliseconds;
+                int wait = (int)(MinRequestIntervalMs - elapsed);
+                if (wait > 0)
+                    System.Threading.Thread.Sleep(wait);
+                _lastRequestStart = DateTime.UtcNow;
+            }
+        }
+
+        public static bool IsBotChallengePage(string html)
+        {
+            if (string.IsNullOrEmpty(html))
+                return true;
+
+            // Real Wowhead pages embed the AWS WAF snippet too, so "gokuProps"
+            // (only present on the JS challenge) or an empty <title> are the
+            // reliable markers of a challenge/block page.
+            if (html.Contains("gokuProps") || html.Contains("challenge-platform"))
+                return true;
+            if (html.Contains("awsWafCookieDomainList") && html.Contains("<title></title>"))
+                return true;
+            return html.Contains("Request blocked.");
         }
 
         public static String GetWowheadUrl(String type, String id)

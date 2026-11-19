@@ -26,26 +26,9 @@ namespace WowHeadParser
             itIT = 10,
         };
 
-        private System.Windows.Forms.CheckBox stagingModeCheckBox;
-
-        public bool StagingMode
-        {
-            get { return stagingModeCheckBox != null && stagingModeCheckBox.Checked; }
-        }
-
         public MainWindow()
         {
             InitializeComponent();
-            stagingModeCheckBox = new System.Windows.Forms.CheckBox();
-            stagingModeCheckBox.AutoSize = true;
-            stagingModeCheckBox.Checked = true;
-            stagingModeCheckBox.Location = new System.Drawing.Point(12, 275);
-            stagingModeCheckBox.Name = "stagingModeCheckBox";
-            stagingModeCheckBox.Size = new System.Drawing.Size(157, 17);
-            stagingModeCheckBox.Text = "Safe staging SQL (raw page)";
-            stagingModeCheckBox.UseVisualStyleBackColor = true;
-            this.ClientSize = new System.Drawing.Size(465, 302);
-            this.Controls.Add(stagingModeCheckBox);
 
             comboBoxChoice.Items.Add("Single");
             comboBoxChoice.Items.Add("Range");
@@ -140,8 +123,7 @@ namespace WowHeadParser
             Properties.Settings.Default.wowheadLocale = selectedLocale;
             Properties.Settings.Default.selectedEntity = comboBoxEntity.SelectedIndex;
             Properties.Settings.Default.version = selectedVersion;
-            Tools.CaptureResponses = StagingMode;
-            Entity.ReloadWowheadBaseUrl();
+            
             UpdateCheckboxSettings();
 
             switch (selectedLocale)
@@ -157,7 +139,7 @@ namespace WowHeadParser
             }
             Properties.Settings.Default.Save();
 
-            m_optionName = "_" + comboBoxEntity.Items[comboBoxEntity.SelectedIndex].ToString() + (StagingMode ? "_Staging" : "");
+            m_optionName = "_" + comboBoxEntity.Items[comboBoxEntity.SelectedIndex].ToString();
             m_fileName = Tools.GetFileNameForCurrentTime(m_optionName);
             if (StartParsing())
                 SetStartButtonEnableState(false);
@@ -211,8 +193,6 @@ namespace WowHeadParser
         public void SetStartButtonEnableState(bool state)
         {
             parseBtn.Enabled = state;
-            if (stagingModeCheckBox != null)
-                stagingModeCheckBox.Enabled = state;
         }
 
         public void setProgressBar(int progress)

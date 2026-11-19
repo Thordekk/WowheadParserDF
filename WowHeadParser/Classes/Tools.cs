@@ -248,32 +248,11 @@ namespace WowHeadParser
 
     class Tools
     {
-        private static readonly ConcurrentDictionary<string, string> CapturedResponses = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        public static bool CaptureResponses { get; set; }
-
         // Wowhead rate-limits/bans aggressive crawlers (AWS WAF). Space out real
         // HTTP requests globally so zone/range runs do not get the IP blocked.
         private static readonly object RequestThrottleLock = new object();
         private static DateTime _lastRequestStart = DateTime.MinValue;
         private const int MinRequestIntervalMs = 350;
-
-        public static bool TryTakeCapturedResponse(string url, out string response)
-        {
-            return CapturedResponses.TryRemove(url, out response);
-        }
-
-        public static void DiscardCapturedResponse(string url)
-        {
-            string ignored;
-            if (url != null)
-                CapturedResponses.TryRemove(url, out ignored);
-        }
-
-        private static void CaptureResponse(string url, string response)
-        {
-            if (CaptureResponses && response != null)
-                CapturedResponses[url] = response;
-        }
 
         public static HttpClient InitHttpClient()
         {
@@ -304,7 +283,6 @@ namespace WowHeadParser
                     // Never trust a cached bot-challenge or empty page: refetch instead.
                     if (!string.IsNullOrEmpty(cachedText) && !IsBotChallengePage(cachedText))
                     {
-                        CaptureResponse(url, cachedText);
                         return cachedText;
                     }
                 }
@@ -370,7 +348,6 @@ namespace WowHeadParser
 
                         try { cacheManager.AddDataAsync(url, body).GetAwaiter().GetResult(); }
                         catch (Exception cacheError) { Console.Error.WriteLine("Wowhead cache write failed: " + cacheError.Message); }
-                        CaptureResponse(url, body);
                         return body;
                     }
                 }

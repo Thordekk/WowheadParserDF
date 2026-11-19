@@ -25,7 +25,6 @@ namespace WowHeadParser
         private readonly MainWindow _view;
         private readonly string _fileName;
         private readonly string _optionName;
-        private readonly bool _stagingMode;
         private int _from;
         private int _to;
         private int _todoCount;
@@ -43,7 +42,6 @@ namespace WowHeadParser
             _view = view;
             _fileName = fileName;
             _optionName = optionName;
-            _stagingMode = view != null && view.StagingMode;
         }
 
         public bool StartParsing(int from, int to)
@@ -85,15 +83,10 @@ namespace WowHeadParser
             string directory = Path.GetDirectoryName(_fileName);
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
-            bool writeStagingSchema = _stagingMode &&
-                (!File.Exists(_fileName) || new FileInfo(_fileName).Length == 0);
-
             _writerTask = Task.Run(() =>
             {
                 using (var writer = new StreamWriter(_fileName, true, new UTF8Encoding(false)))
                 {
-                    if (writeStagingSchema)
-                        writer.Write(Entity.StagingSchemaSql);
                     while (true)
                     {
                         string sql = null;
@@ -148,48 +141,20 @@ namespace WowHeadParser
                 entity.CacheManager = _cacheManagers[workerIndex];
 
                 bool parsed = entity.ParseSingleJson();
-                bool stagingMode = _stagingMode;
-                if (parsed || stagingMode)
+                if (parsed)
                 {
-                    string legacySql = string.Empty;
-                    if (parsed && stagingMode)
-                    {
-                        try { legacySql = entity.GetSQLRequest(); }
-                        catch (Exception sqlError) { Console.Error.WriteLine("Legacy SQL mapping failed for " + entityId + ": " + sqlError.Message); }
-                    }
-                    else if (parsed)
-                        legacySql = entity.GetSQLRequest();
-                    string sql = stagingMode
-                        ? entity.GetStagingSQL(legacySql)
-                        : legacySql;
+                    string sql;
+                    try { sql = entity.GetSQLRequest(); }
+                    catch (Exception sqlError) { Console.Error.WriteLine("Legacy SQL mapping failed for " + entityId + ": " + sqlError.Message); sql = string.Empty; }
                     if (!string.IsNullOrWhiteSpace(sql))
                     {
                         lock (_queueLock)
                             _sqlQueue.Enqueue("\n" + sql + "\n");
                     }
-                    else if (_stagingMode)
-                    {
-                        Console.Error.WriteLine("No captured Wowhead page was available for entity " + entityId + "; skipped staging row.");
-                    }
-                }
-                else
-                {
-                    Tools.DiscardCapturedResponse(entity.GetWowheadUrl());
                 }
             }
             catch (Exception ex)
             {
-                if (entity != null && _stagingMode)
-                {
-                    string staged = entity.GetStagingSQL(string.Empty);
-                    if (!string.IsNullOrWhiteSpace(staged))
-                    {
-                        lock (_queueLock)
-                            _sqlQueue.Enqueue("\n" + staged + "\n");
-                    }
-                }
-                else if (entity != null)
-                    Tools.DiscardCapturedResponse(entity.GetWowheadUrl());
                 Console.Error.WriteLine("Error processing entity " + entityId + ": " + ex);
             }
             finally

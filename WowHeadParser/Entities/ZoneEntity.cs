@@ -4,6 +4,7 @@
 using Newtonsoft.Json;
 using Sql;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using WowHeadParser.Models;
@@ -38,6 +39,16 @@ namespace WowHeadParser.Entities
         public override String GetWowheadUrl()
         {
             return GetWowheadBaseUrl() + "/zone=" + m_data.id;
+        }
+
+        public override List<Entity> GetIdsFromZone(String zoneId, String zoneHtml)
+        {
+            int id;
+            if (!Int32.TryParse(zoneId, out id) || id <= 0)
+                return new List<Entity>();
+
+            // A zone "contains" itself for zone-level data such as fishing loot.
+            return new List<Entity> { new ZoneEntity(id) };
         }
 
         public override bool ParseSingleJson(int id = 0)

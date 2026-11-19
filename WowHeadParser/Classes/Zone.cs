@@ -22,7 +22,6 @@ namespace WowHeadParser
         private bool _completionStarted;
 
         private readonly MainWindow _view;
-        private readonly bool _stagingMode;
         private readonly string _optionName;
         private string _zoneId;
         private string _zoneHtml;
@@ -39,7 +38,6 @@ namespace WowHeadParser
         public Zone(MainWindow view, string optionName)
         {
             _view = view;
-            _stagingMode = view != null && view.StagingMode;
             _optionName = optionName;
         }
 
@@ -68,8 +66,6 @@ namespace WowHeadParser
             {
                 using (var writer = new StreamWriter(outputPath, false, new UTF8Encoding(false)))
                 {
-                    if (_stagingMode)
-                        await writer.WriteAsync(Entity.StagingSchemaSql).ConfigureAwait(false);
                     while (true)
                     {
                         string sql = null;
@@ -151,24 +147,6 @@ namespace WowHeadParser
             List<Entity> entityList = requestedEntity.GetIdsFromZone(_zoneId, _zoneHtml);
             if (entityList != null)
                 _entities.AddRange(entityList);
-
-            string zoneUrl = GetZoneUrl(_zoneId);
-            if (_stagingMode)
-            {
-                string payload;
-                if (Tools.TryTakeCapturedResponse(zoneUrl, out payload) && !string.IsNullOrEmpty(payload))
-                {
-                    int zoneId = Int32.Parse(_zoneId);
-                    string sql = Entity.CreateStagingSQL("zone_index", zoneId, zoneUrl, payload, string.Empty);
-                    if (!string.IsNullOrWhiteSpace(sql))
-                    {
-                        lock (_queueLock)
-                            _writeQueue.Enqueue(sql + Environment.NewLine);
-                    }
-                }
-            }
-            else
-                Tools.DiscardCapturedResponse(zoneUrl);
         }
 
         private void StartSniffByEntity()
@@ -217,40 +195,20 @@ namespace WowHeadParser
                 entity.webClient = _httpClients[workerIndex];
                 entity.CacheManager = _cacheManagers[workerIndex];
                 bool parsed = entity.ParseSingleJson();
-                bool stagingMode = _stagingMode;
-                if (parsed || stagingMode)
+                if (parsed)
                 {
-                    string legacySql = string.Empty;
-                    if (parsed && stagingMode)
-                    {
-                        try { legacySql = entity.GetSQLRequest(); }
-                        catch (Exception sqlError) { Console.Error.WriteLine("Legacy SQL mapping failed for zone entity: " + sqlError.Message); }
-                    }
-                    else if (parsed)
-                        legacySql = entity.GetSQLRequest();
-                    string sql = stagingMode ? entity.GetStagingSQL(legacySql) : legacySql;
+                    string sql;
+                    try { sql = entity.GetSQLRequest(); }
+                    catch (Exception sqlError) { Console.Error.WriteLine("Legacy SQL mapping failed for zone entity: " + sqlError.Message); sql = string.Empty; }
                     if (!string.IsNullOrWhiteSpace(sql))
                     {
                         lock (_queueLock)
                             _writeQueue.Enqueue(sql + Environment.NewLine);
                     }
                 }
-                else
-                    Tools.DiscardCapturedResponse(entity.GetWowheadUrl());
             }
             catch (Exception ex)
             {
-                if (_stagingMode)
-                {
-                    string staged = entity.GetStagingSQL(string.Empty);
-                    if (!string.IsNullOrWhiteSpace(staged))
-                    {
-                        lock (_queueLock)
-                            _writeQueue.Enqueue(staged + Environment.NewLine);
-                    }
-                }
-                else
-                    Tools.DiscardCapturedResponse(entity.GetWowheadUrl());
                 Console.Error.WriteLine("Zone entity parse failed: " + ex);
             }
             finally
